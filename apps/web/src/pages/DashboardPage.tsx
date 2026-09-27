@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Avatar, Button, Card, Col, Input, Modal, Row, Space, Table, Typography, message } from "antd";
 import { client, currentRole } from "../api/client";
 import { StatusTag } from "../components/StatusTag";
+import { randomId } from "../utils/randomId";
 
 export function DashboardPage() {
   const queryClient = useQueryClient();
@@ -228,7 +229,7 @@ export function DashboardPage() {
 }
 
 function createAvatarUrl(): string {
-  return `https://api.dicebear.com/10.x/lorelei/svg?seed=${crypto.randomUUID()}`;
+  return `https://api.dicebear.com/10.x/lorelei/svg?seed=${randomId()}`;
 }
 
 function RateLimitCountdown({ value }: { value: string | null }) {
