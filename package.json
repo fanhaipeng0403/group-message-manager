@@ -7,7 +7,7 @@
     "dev": "pnpm --filter @platform/contracts build && concurrently -n api,web,gateway,agent -c blue,magenta,green,yellow \"pnpm --filter @platform/api dev\" \"pnpm --filter @platform/web dev\" \"pnpm --filter @platform/mock-gateway dev\" \"pnpm --filter @platform/mock-agent dev\"",
     "lint": "pnpm lint:eslint && pnpm lint:typecheck && pnpm format:check",
     "lint:eslint": "eslint .",
-    "lint:typecheck": "pnpm -r lint",
+    "lint:typecheck": "pnpm --filter @platform/contracts build && pnpm -r lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "pnpm --filter @platform/contracts build && pnpm -r test",
