@@ -1,180 +1,209 @@
 # 多账号群组消息管理平台
 
-面向《全栈开发工程师笔试题（2026-09-26）》的完整实现：Node.js + TypeScript + PostgreSQL 后端，React 18 控制台，并自带可注入故障的**消息网关**与 **Agent** 模拟服务，便于本地演示与自动化验收。
+一个面向运营人员的多账号群聊工作台：统一管理服务账号、群组消息、定时任务与 Agent 自动应答。
 
-## 给评审的快速路径
+项目采用 Node.js + TypeScript + PostgreSQL + React 18，并内置可注入故障的消息网关和 Agent 模拟服务。实现重点不是普通 CRUD，而是外部服务重复、乱序、限流、超时和断线时，系统仍能保持消息可追踪、任务可恢复、结果可对账。
 
-| 用时                       | 建议操作                                                                                                                                |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| **约 2 分钟**              | 对照下文「需求完成度」表；扫一眼「设计要点」是否与题目 A/B 组一致。                                                                     |
-| **约 10 分钟**             | `pnpm install && make up`，浏览器打开 Web 控制台，用 `admin/admin` 登录体验账号、建群、时间线与 Agent。                                 |
-| **约 15 分钟（可脚本化）** | 服务已启动的前提下，依次跑「自动化验收」中与题目 **S1–S8** 对应的命令（见下表映射）。                                                   |
-| **读代码**                 | 从 `apps/api` 的网关 SSE 消费、出站 outbox、Agent 编排与 `packages/contracts` 的 Zod 契约入手；可靠性提纲见「网关不可靠时的处理思路」。 |
+**快速导航：** [快速开始](#快速开始) · [系统架构](#系统架构图) · [核心数据流](#核心数据流) · [关键设计](#关键设计) · [验收](#验收) · [完成范围](#完成范围)
 
-**题目典型场景与仓库脚本**
+## 快速开始
 
-| 题目场景                        | 验收命令                        |
-| ------------------------------- | ------------------------------- |
-| S1 受理与发出                   | `pnpm scenario smoke`           |
-| S2 事件重复                     | `pnpm scenario s2`              |
-| S3 己方消息回流                 | `pnpm scenario s3`              |
-| S4 限流                         | `pnpm scenario s4`              |
-| S5 Agent 同 key 重试 / 504 对账 | `pnpm scenario s5`              |
-| S6 Agent 坏响应                 | `pnpm scenario s6`              |
-| S7 序列并发互斥                 | `pnpm sequence:verify`（含 S7） |
-| S8 占位符预检                   | `pnpm sequence:verify`（含 S8） |
-
-另有：`pnpm scenario agent`（Agent 端到端）、`pnpm auth:verify`（B3 会话）、`pnpm group-lifecycle:verify`（B2）、`pnpm lab:verify`（控制台可靠性实验）、`pnpm account-concurrency:verify`（账号并发）。
-
-## 技术栈与仓库结构
-
-与题干一致：**后端** Fastify + PostgreSQL；**前端** React 18 + Vite + TypeScript。对外 REST、WebSocket；对接题干中的消息网关（HTTP + SSE）与 Agent（Anthropic tool use 形状），开发和演示由本仓库内的 Mock 服务承担。
-
-```text
-apps/
-  api/             平台 API、持久化、Worker（网关 SSE / 出站 / Agent / 序列）
-  web/             运营管理控制台（题目第 4 节页面 1–5）
-  mock-gateway/    可配置故障的消息网关模拟
-  mock-agent/      Agent 协议与异常行为模拟
-packages/
-  contracts/       Zod Schema + 共享 TypeScript 类型（API / WS / 协议）
-scripts/           场景与全栈验收脚本
-```
-
-本仓库为 **pnpm monorepo**：各 app 可独立 `build` 与部署；`packages/contracts` 与 API、前端、Mock 在同一次 PR 内一起改，避免契约与实现脱节。根目录一份 `pnpm-lock.yaml` 统一依赖版本。
-
-## 本地启动
-
-**环境**：Node.js 22+、pnpm 10+、Docker（仅 PostgreSQL）。
+环境要求：Node.js 22+、pnpm 10+、Docker（含 Compose v2）。
 
 ```bash
 pnpm install
 make up
 ```
 
-`make up` 等价于：
-
-```bash
-pnpm infra:up      # PostgreSQL → localhost:55432
-pnpm db:migrate    # 可重复执行的数据库迁移
-pnpm dev           # API、Web、Mock 网关、Mock Agent 并行开发模式
-```
-
-分步执行：`make infra-up`、`make db-migrate`、`make dev`。
+`make up` 会依次启动 PostgreSQL、执行数据库迁移，并运行 API、Web、Mock 网关和 Mock Agent。
 
 | 服务          | 地址                            |
 | ------------- | ------------------------------- |
 | Web 控制台    | http://localhost:5173           |
-| API / Swagger | http://localhost:3000/docs      |
+| Swagger       | http://localhost:3000/docs      |
 | OpenAPI JSON  | http://localhost:3000/docs/json |
 | Mock 消息网关 | http://localhost:4001           |
 | Mock Agent    | http://localhost:4002           |
 
-**演示登录**
+演示账号：
 
-- `admin / admin`：读写
-- `viewer / viewer`：只读（界面隐藏写操作；直接调写接口返回 `403`）
+- `admin / admin`：可读写
+- `viewer / viewer`：只读；写接口会返回 `403`
 
-预置服务账号「小红助手 / 小明助手 / 小张助手」；管理员还可在控制台新建账号。新账号为 `idle`，需先连接网关后才可参与建群与发消息（与题干 2.1 一致）。
+控制台预置「小红助手 / 小明助手 / 小张助手」，也可新建服务账号。新账号初始状态为 `idle`，连接网关后才能参与建群和发消息。
 
-**环境变量**：见 `.env.example`（`PORT`、`DATABASE_URL`、`GATEWAY_URL`、`AGENT_URL`、`JWT_SECRET`、`WEB_ORIGIN`、`DEMO_MODE` 等）。非演示环境建议 `DEMO_MODE=false`，关闭 Mock 网关上的故障注入开关。
+## 已实现能力
 
-**数据库迁移**：部署时显式执行 `pnpm db:migrate`。若库表版本落后于代码内置 migration，**API 拒绝启动**并提示先迁移，避免运行中才因缺表报错。
+- **服务账号管理**：账号创建、连接、离线、重连、释放，以及状态机并发保护。
+- **群聊工作台**：多账号筛选、群列表、消息时间线、人工发消息、群成员与异常待处理状态。
+- **可靠消息链路**：入站去重、己方消息合并、SSE 游标续传、outbox、限流恢复和 504 对账。
+- **异步建群**：创建、邀请、等待成员加入、提升管理员和 Job 进度查询。
+- **Agent 运行时**：读取上下文、发消息、移除成员、审计、幂等、运行预算和故障恢复。
+- **自动任务**：定时序列、公共变量与逐步骤覆盖、预检、单群互斥和进度展示。
+- **实时与会话**：WebSocket 断线补发、Refresh Token 轮换、重放失效与退出登录。
+- **工程化**：Zod 共享契约、Swagger、Migration 版本保护、Git hooks 和自动化验收脚本。
 
-## 设计要点（与题目对照）
+## 系统架构图
 
-以下是对题干 A/B 组的实现取向摘要，细节以代码与 OpenAPI 为准。
+```mermaid
+flowchart LR
+    Operator[运营人员]
 
-- **账号（A1）**：有限状态机 + 操作员手动转移（CAS）；终态时清成员、取消排队发送、推 `account_terminal`。
-- **网关边界（A2）**：出站先落库再调网关（outbox），崩溃可续发；入站按 `(groupId, msgId)` 去重；504 → `unknown` 后对账，确认未发出时最多重试一次；写库失败不丢事件，推 `inconsistency`。
-- **建群（A3 / B2）**：异步 Job（建群 → 邀请 → join → 等事件 → promote）；邀请未就绪/过期重试；`leave-all` 非群主先退、群主最后退。
-- **时间线与实时（A4 / B4）**：消息 keyset 分页；WebSocket 单调 `seq`，断线 `sinceSeq` 补发。
-- **Agent（A5）**：非己方消息触发；单群单 run；审计门控；run 内 `idempotency_key` 幂等；步数/时长/协议错误上限；重启可恢复。
-- **定时序列（B1）**：占位符预检（S8）；单群单 running（S7）；与出站管道共用发送与限流逻辑。
-- **会话（B3）**：Refresh HttpOnly Cookie、轮换与重放作废；Logout 立即使 access token 失效。
-- **契约与文档**：路由校验、TS 类型与 Swagger 来自同一套 Zod 定义（`packages/contracts` + API 注册）。
+    subgraph Client[React 控制台]
+        Web[消息工作台]
+        Live[实时状态同步]
+    end
 
-**选做 C1–C3**（媒体落盘、真实 LLM Agent、Playwright E2E）：未实现，时间集中在 A/B 主线与可重复验收。
+    subgraph Platform[平台 API]
+        HTTP[REST API<br/>鉴权与业务操作]
+        Events[SSE 消费器<br/>去重与游标续传]
+        Jobs[后台任务<br/>建群 · Outbox · 序列]
+        AgentRun[Agent 运行时<br/>工具执行 · 审计 · 幂等]
+        DB[(PostgreSQL<br/>Inbox · Outbox · Timeline · Jobs)]
+    end
 
-## 网关不可靠时的处理思路
+    subgraph External[外部服务]
+        Gateway[消息网关<br/>HTTP + SSE]
+        Agent[Agent 服务<br/>Tool Use 协议]
+    end
 
-题干 2.1 规定 SSE 为 **至少一次（at-least-once）** 投递：可能重复、短暂乱序、随时断连。平台在网关之上用 PostgreSQL 与后台 Worker，把边界外的不可靠收敛为**可持久化、可恢复、可对账**的内部状态。读代码时可按下面 checklist 对照。
-
-### 入站（SSE → 库 → 控制台）
-
-| 关注点      | 做法                                                        |
-| ----------- | ----------------------------------------------------------- |
-| 重复        | 同一 `msgId` / 事件只生效一次（验收：`pnpm scenario s2`）   |
-| 乱序        | 展示与分页按 `sentAt` 与 keyset，不按到达顺序               |
-| 断连        | 持久化 `since` 游标，重启后续传                             |
-| 己方回流    | 合并到原 outbound，`isOwn=true`，不触发 Agent（`s3`）       |
-| 账号 / 成员 | `account_status`、成员进出与建群 Job 对齐                   |
-| 持久化失败  | 不中断消费、不静默丢事件；推 `inconsistency`，留 inbox 重试 |
-
-去重键是网关分配的 **`msgId`**，不是正文：不同 `msgId` 内容相同也占两行。
-
-### 出站（API / Worker → 网关）
-
-| 关注点   | 做法                                                              |
-| -------- | ----------------------------------------------------------------- |
-| 可靠性   | 先写 outbox 再请求网关（`smoke`）                                 |
-| 状态     | `queued → accepted → sent` / `failed` / `unknown` / `cancelled`   |
-| 限流     | `429` → `rate_limited`，排队消息保留并按序再发（`s4`）            |
-| 504      | `unknown` → `by-client-id` 对账；确认未发出时最多重试一次（`s5`） |
-| 异步命令 | 建群、进退群等走 Job 与重试（A3、B2）                             |
-
-### 同一管道上的能力
-
-Agent 触发与工具执行、定时序列排期、WebSocket 推送，均复用上述入站 / 出站与账号状态逻辑。
-
-## 自动化验收
-
-需先 `make up`（或等价地启动 API 与 Mock）。脚本会通过公开 API 准备数据、向 Mock 注入题干行为，并断言可观察结果；**不会**直接改库伪造成功。
-
-```bash
-pnpm scenario smoke   # S1：queued → accepted → sent
-pnpm scenario s2      # S2
-pnpm scenario s3      # S3
-pnpm scenario s4      # S4
-pnpm scenario s5      # S5
-pnpm scenario s6      # S6
-pnpm scenario agent   # Agent 读群、审计、发送、结束
-pnpm sequence:verify  # S7 + S8 + 序列运行
-pnpm auth:verify      # B3 Refresh / 重放 / Logout
-pnpm group-lifecycle:verify
-pnpm account-concurrency:verify
-pnpm lab:verify       # 控制台五项可靠性实验
+    Operator --> Web
+    Web -->|REST| HTTP
+    Live <-->|WebSocket + seq| HTTP
+    HTTP <--> DB
+    Events --> DB
+    DB <--> Jobs
+    DB <--> AgentRun
+    Jobs -->|HTTP 命令| Gateway
+    Gateway -->|至少一次 SSE| Events
+    AgentRun <-->|agent/turn| Agent
+    AgentRun -->|发送写入 Outbox| DB
 ```
 
-## 需求完成度
+主链路实现入口：[业务模块](./apps/api/src/modules) · [网关事件消费](./apps/api/src/workers/gateway-events.ts) · [Outbox](./apps/api/src/workers/outbox.ts) · [Agent 运行时](./apps/api/src/workers/agent-runs.ts) · [定时序列](./apps/api/src/workers/sequences.ts) · [共享契约](./packages/contracts/src)
 
-| 需求                                  | 状态   | 证据（实现或验收）                                 |
-| ------------------------------------- | ------ | -------------------------------------------------- |
-| A0 可重复 Migration 与结构版本保护    | 已完成 | `pnpm db:migrate`；启动时版本校验                  |
-| A0 admin/viewer 权限                  | 已完成 | 前端可见性 + API 鉴权                              |
-| A1 账号状态机与 CAS                   | 已完成 | 条件更新、终态清理；`account-concurrency:verify`   |
-| A2 出站生命周期与 outbox              | 已完成 | `outbox-compensation.test.ts`；`smoke`、`s4`、`s5` |
-| A2 入站去重与己方合并                 | 已完成 | 唯一约束；`s2`、`s3`                               |
-| A2 SSE 游标与缺口补洞                 | 已完成 | 持久化水位，连续推进                               |
-| A3 异步建群                           | 已完成 | Job 模型 + 前端任务状态                            |
-| A4 时间线 keyset + WS                 | 已完成 | `(sent_at, id)` 游标；`ws_events` 补发             |
-| A5 Agent 单群单 run、审计、幂等、恢复 | 已完成 | 部分唯一索引；`agent`、`s6`；步骤 API              |
-| A6 页面 1–3                           | 已完成 | 登录、账号、群详情与时间线、Agent 列表             |
-| B1 定时序列                           | 已完成 | Worker + 预检；`sequence:verify`；页面 5           |
-| B2 邀请与 leave-all                   | 已完成 | `group-lifecycle:verify`                           |
-| B3 Refresh 轮换                       | 已完成 | `auth:verify`                                      |
-| B4 断线补齐与 Agent 详情              | 已完成 | `sinceSeq`；运行详情页 / 抽屉                      |
-| C1–C3                                 | 未做   | 选做项                                             |
+### 核心数据流
 
-## 开发与质量
+```mermaid
+sequenceDiagram
+    autonumber
+    participant User as 群内用户
+    participant Gateway as 消息网关
+    participant Events as SSE 消费器
+    participant DB as PostgreSQL
+    participant Runtime as Agent 运行时
+    participant Agent as Agent 服务
+    participant Outbox as Outbox Worker
+    participant Web as Web 控制台
 
-```bash
-pnpm build       # 生产构建（含 contracts）
-pnpm lint        # ESLint + 各包 tsc + Prettier
-pnpm test        # 单元 / 集成测试
-pnpm format      # Prettier 写回
-pnpm db:migrate  # 迁移
+    User->>Gateway: 发送群消息
+    Gateway-->>Events: message 事件（可能重复或乱序）
+    Events->>DB: Inbox 去重并写入消息时间线
+    Events-->>Web: WebSocket 事件（单调 seq）
+    Events->>Runtime: 为外部消息触发单群 Agent run
+    Runtime->>Agent: 上下文 + 可用工具
+    Agent-->>Runtime: tool_use
+    Runtime->>DB: 审计并持久化步骤与 Outbox
+    Outbox->>Gateway: 携带 clientMsgId 发送
+    alt 429 限流
+        Gateway-->>Outbox: 延迟后按序重试
+    else 504 结果未知
+        Gateway-->>Outbox: 按 clientMsgId 对账，必要时补发一次
+    end
+    Gateway-->>Events: message_sent / message
+    Events->>DB: 合并己方回流并更新最终状态
+    Events-->>Web: 实时展示消息与 Agent 执行结果
 ```
 
-- **pre-commit**：`lint-staged`（ESLint fix + Prettier）。
-- **pre-push**：`pnpm lint && pnpm test`。
+人工发送和定时序列也写入同一条 Outbox 链路，因此共享限流、对账、重试和状态回显能力。
+
+### 仓库结构
+
+```text
+apps/
+  api/             REST / WebSocket、PostgreSQL、后台任务
+  web/             React 运营控制台
+  mock-gateway/    支持故障注入的消息网关
+  mock-agent/      Agent 协议与异常行为模拟
+packages/
+  contracts/       Zod Schema 与共享 TypeScript 类型
+scripts/           场景验收脚本
+deploy/            容器化部署配置
+```
+
+采用 pnpm monorepo，使 API、Web、Mock 服务与共享契约可以在一次变更中同步演进，同时仍可独立构建和部署。
+
+## 关键设计
+
+| 领域       | 实现                                                                            |
+| ---------- | ------------------------------------------------------------------------------- |
+| 账号状态   | 有限状态机 + CAS；进入终态时清理成员并取消排队消息                              |
+| 入站消息   | `(groupId, msgId)` 去重；持久化 SSE 游标；己方回流合并原消息                    |
+| 出站消息   | 先写 outbox 再调用网关；完整记录 `queued → accepted → sent/failed/unknown`      |
+| 超时与限流 | `429` 延迟重试；`504` 进入 `unknown`，按 `clientMsgId` 对账后最多补发一次       |
+| 建群       | 异步 Job 编排创建、邀请、加入和管理员提升；邀请未就绪或过期可重试               |
+| 消息时间线 | `(sentAt, id)` keyset 分页；WebSocket 通过单调 `seq` 和 `sinceSeq` 补齐断线事件 |
+| Agent      | 单群单 run；工具调用审计；run 内幂等；协议错误、步数和时长均有上限              |
+| 定时序列   | 启动前解析变量来源并预检；同一群同时只允许一个序列运行                          |
+| 登录会话   | HttpOnly Refresh Token 轮换；重放时整条会话失效；Logout 立即失效                |
+| API 契约   | Zod 同时用于运行时校验、共享类型和 OpenAPI 文档                                 |
+
+数据库迁移需显式执行 `pnpm db:migrate`。若数据库版本落后，API 会拒绝启动并提示迁移，避免带着不兼容 Schema 运行。
+
+## 验收
+
+先保持 `make up` 运行，再执行：
+
+| 场景                     | 命令                   |
+| ------------------------ | ---------------------- |
+| S1 正常发送              | `pnpm scenario smoke`  |
+| S2 重复事件              | `pnpm scenario s2`     |
+| S3 己方消息回流          | `pnpm scenario s3`     |
+| S4 限流恢复              | `pnpm scenario s4`     |
+| S5 504 对账与 Agent 幂等 | `pnpm scenario s5`     |
+| S6 Agent 异常响应        | `pnpm scenario s6`     |
+| S7 序列并发互斥          | `pnpm sequence:verify` |
+| S8 变量预检              | `pnpm sequence:verify` |
+
+补充验收：
+
+```bash
+pnpm scenario agent              # Agent 完整工具调用链
+pnpm auth:verify                 # Refresh / 重放 / Logout
+pnpm group-lifecycle:verify      # 邀请与全员退出
+pnpm account-concurrency:verify  # 账号并发状态转移
+pnpm lab:verify                  # 控制台可靠性实验
+```
+
+脚本只通过公开 API 和 Mock 故障注入准备场景，不直接修改数据库伪造结果。
+
+## 完成范围
+
+| 需求                    | 状态   | 说明                                                 |
+| ----------------------- | ------ | ---------------------------------------------------- |
+| A0–A6                   | 已完成 | 基础能力、账号、网关、建群、时间线、Agent 与页面 1–3 |
+| B1                      | 已完成 | 定时序列、变量预检与页面 5                           |
+| B2                      | 已完成 | 邀请生命周期与 `leave-all`                           |
+| B3                      | 已完成 | Refresh Token 轮换与退出登录                         |
+| B4                      | 已完成 | WebSocket 断线补齐与 Agent 详情                      |
+| C1 媒体文件             | 未实现 | 选做                                                 |
+| C2 Claude / Gemini 服务 | 未实现 | 选做；下述 Qwen 接入为额外实验能力，不计入题目完成度 |
+| C3 Playwright E2E       | 未实现 | 选做                                                 |
+
+### 可选：使用真实模型
+
+默认 Mock Agent 使用固定脚本，保证 S1–S8 可重复验收。配置 `DASHSCOPE_API_KEY` 后，可在保持 `/agent/turn` 工具协议不变的情况下切换到 Qwen；模型、地址和超时见 `.env.example`。
+
+## 开发命令
+
+```bash
+pnpm build       # 生产构建
+pnpm lint        # ESLint + TypeScript + Prettier
+pnpm test        # 单元与契约测试
+pnpm format      # 格式化
+pnpm db:migrate  # 执行迁移
+```
+
+- `pre-commit`：对暂存文件执行 ESLint fix 与 Prettier。
+- `pre-push`：执行 `pnpm lint && pnpm test`。
+- 其他配置见 `.env.example`；非演示环境应设置 `DEMO_MODE=false`。

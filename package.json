@@ -13,7 +13,7 @@
     "test": "pnpm --filter @platform/contracts build && pnpm -r test",
     "prepare": "husky",
     "db:migrate": "pnpm --filter @platform/api db:migrate",
-    "infra:up": "docker compose up -d postgres",
+    "infra:up": "docker compose up -d --wait postgres",
     "scenario": "node scripts/run-scenario.mjs",
     "lab:verify": "node scripts/run-reliability-lab.mjs",
     "auth:verify": "node scripts/verify-auth-session.mjs",
