@@ -1,0 +1,54 @@
+# Build images first: set -a && source deploy/.env && set +a && ./deploy/build-images.sh
+version: "3.3"
+
+services:
+  gateway:
+    image: group-message-manager-node:${GMM_IMAGE_TAG:-latest}
+    command: ["node", "apps/mock-gateway/dist/main.js"]
+    environment:
+      PORT: "4001"
+    networks:
+      - gmm
+    restart: unless-stopped
+
+  agent:
+    image: group-message-manager-node:${GMM_IMAGE_TAG:-latest}
+    command: ["node", "apps/mock-agent/dist/main.js"]
+    env_file:
+      - .env
+    environment:
+      PORT: "4002"
+    networks:
+      - gmm
+    restart: unless-stopped
+
+  api:
+    image: group-message-manager-node:${GMM_IMAGE_TAG:-latest}
+    command: ["sh", "-c", "node apps/api/dist/db/migrate.js && node apps/api/dist/main.js"]
+    env_file:
+      - .env
+    environment:
+      PORT: "3000"
+      GATEWAY_URL: http://gateway:4001
+      AGENT_URL: http://agent:4002
+      DEMO_MODE: "false"
+    ports:
+      - "13000:3000"
+    depends_on:
+      - gateway
+      - agent
+    networks:
+      - gmm
+    restart: unless-stopped
+
+  web:
+    image: group-message-manager-web:${GMM_IMAGE_TAG:-latest}
+    ports:
+      - "15173:80"
+    networks:
+      - gmm
+    restart: unless-stopped
+
+networks:
+  gmm:
+    driver: bridge

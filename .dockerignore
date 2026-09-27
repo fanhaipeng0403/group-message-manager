@@ -1,0 +1,12 @@
+node_modules
+.git
+.husky
+**/.playwright-cli
+**/dist
+**/.vite
+.env
+.env.*
+!.env.example
+apps/web/dist
+coverage
+*.log
