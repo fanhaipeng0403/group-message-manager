@@ -102,6 +102,11 @@ export const client = {
     }),
   logout: () => api<{ ok: true }>("/api/auth/logout", { method: "POST" }, false),
   accounts: () => api<Account[]>("/api/accounts"),
+  createAccount: (displayName: string, avatarUrl: string) =>
+    api<Account>("/api/accounts", {
+      method: "POST",
+      body: JSON.stringify({ displayName, avatarUrl }),
+    }),
   connectAccount: (id: string) => api(`/api/accounts/${id}/connect`, { method: "POST" }),
   transitionAccount: (id: string, expectedFrom: string, to: string) =>
     api(`/api/accounts/${id}/transition`, { method: "POST", body: JSON.stringify({ expectedFrom, to }) }),

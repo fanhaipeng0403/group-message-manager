@@ -8,7 +8,6 @@ apps/
   mock-agent/      工具调用 Agent 协议模拟器
 packages/
   contracts/       Zod 运行时 Schema 与 TypeScript 通信类型
-docs/              架构说明、可靠性约束与设计决策记录
 scripts/           可执行的可靠性验收场景
 ```
 
@@ -49,6 +48,8 @@ pnpm dev           # 同时启动 API、Web、Mock 网关、Mock Agent
 - `admin / admin`：管理员，可读写
 - `viewer / viewer`：观察员，只读；页面隐藏写操作，直接调用写接口也会返回 `403`
 
+系统预置“小红助手 / 小明助手 / 小张助手”三个服务账号；管理员也可以在运行总览中新建带头像的服务账号。新账号以 `idle` 状态创建，仍需按题目规定连接消息网关后才能加入群聊。
+
 接口参数校验、TypeScript 类型推导和 API 文档来自同一份 Zod 路由 Schema，避免代码与文档逐渐不一致。
 
 可配置环境变量包括 `PORT`、`DATABASE_URL`、`GATEWAY_URL`、`AGENT_URL`、`JWT_SECRET`、`WEB_ORIGIN` 和 `DEMO_MODE`，具体示例见 `.env.example`。在笔试演示环境之外应设置 `DEMO_MODE=false`，关闭故障注入接口。
@@ -65,7 +66,7 @@ API 启动时会比较数据库中的 `schema_migrations` 版本与代码内置 
 
 ## 可靠性主线（阅读提纲）
 
-外部消息网关采用 **至少一次（at-least-once）** 投递：同一通知可能重复到达、顺序可能短暂错乱、连接可能中断。平台在网关之上用 PostgreSQL 与 Worker 把「不可靠边界」收敛成 **可持久化、可恢复、可对账** 的内部状态。下面按 **入站 / 出站** 归纳要处理的逻辑（面试讲解或读代码时可作 checklist）。
+外部消息网关采用 **至少一次（at-least-once）** 投递：同一通知可能重复到达、顺序可能短暂错乱、连接可能中断。平台在网关之上用 PostgreSQL 与 Worker 把「不可靠边界」收敛成 **可持久化、可恢复、可对账** 的内部状态。下面按 **入站 / 出站** 归纳要处理的逻辑（读代码时可作 checklist）。
 
 ### 消息进来（入站 / SSE）
 
@@ -96,8 +97,6 @@ API 启动时会比较数据库中的 `schema_migrations` 版本与代码内置 
 - **Agent**：他人消息触发（`agentEnabled`）；`send` / `kick` 前 audit；同 run 内 `idempotency_key` 幂等（验收：`agent`、`s6`）
 - **定时序列**：排期发送走同一套出站管道（验收：`sequence:verify`）
 - **WebSocket**：账号 / 消息 / Agent / 序列状态推送给控制台；断线用 `sinceSeq` 补发（B4）
-
-更细的约束见 [可靠性约束](docs/reliability-invariants.md)。
 
 ## 可靠性场景
 
@@ -142,13 +141,6 @@ pnpm account-concurrency:verify # 验证并发连接/断开后数据库与网关
 | B3 Refresh Token 轮换               | 已完成         | HttpOnly Cookie、单次轮换、重放撤销整条会话、Logout 立即失效          |
 | B4 前端断线游标与独立运行详情页     | 已完成         | `sinceSeq` 补发、WS 认证续期、客户端游标去重、Agent 步骤详情抽屉      |
 | C1～C3                              | 未实现         | 按题目要求作为选做项，当前不占用核心实现时间                          |
-
-## 设计文档
-
-- [系统架构](docs/architecture.md)
-- [可靠性约束](docs/reliability-invariants.md)
-- [ADR 001：轻量级 Monorepo](docs/adr/001-lightweight-monorepo.md)
-- [ADR 002：使用 PostgreSQL 进行协调](docs/adr/002-postgres-coordination.md)
 
 ## 常用命令
 

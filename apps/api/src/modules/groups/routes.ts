@@ -207,10 +207,10 @@ async function listGroups(pool: DbPool, id?: string) {
         "SELECT account_id, platform_user_id, role FROM group_members WHERE group_id = $1 ORDER BY role, account_id",
         [row.id],
       );
-      const agent = await pool.query<{ id: string }>(
-        "SELECT id FROM agent_runs WHERE group_id = $1 AND status = 'running' LIMIT 1",
-        [row.id],
-      );
+      const agent = await pool.query<{
+        id: string;
+        status: "running" | "finished" | "failed" | "blocked" | "cancelled";
+      }>("SELECT id, status FROM agent_runs WHERE group_id = $1 ORDER BY created_at DESC LIMIT 1", [row.id]);
       const sequence = await pool.query<{ id: string }>(
         "SELECT id FROM sequence_runs WHERE group_id = $1 AND status = 'running' LIMIT 1",
         [row.id],
@@ -228,7 +228,8 @@ async function listGroups(pool: DbPool, id?: string) {
           role: member.role,
         })),
         activeSequenceRunId: sequence.rows[0]?.id ?? null,
-        activeAgentRunId: agent.rows[0]?.id ?? null,
+        activeAgentRunId: agent.rows[0]?.status === "running" ? agent.rows[0].id : null,
+        latestAgentRunStatus: agent.rows[0]?.status ?? null,
       };
     }),
   );

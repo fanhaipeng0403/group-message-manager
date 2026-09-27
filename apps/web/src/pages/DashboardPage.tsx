@@ -1,12 +1,15 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, Card, Col, Row, Space, Table, Typography, message } from "antd";
+import { Alert, Avatar, Button, Card, Col, Input, Modal, Row, Space, Table, Typography, message } from "antd";
 import { client, currentRole } from "../api/client";
 import { StatusTag } from "../components/StatusTag";
 
 export function DashboardPage() {
   const queryClient = useQueryClient();
   const admin = currentRole() === "admin";
+  const [createOpen, setCreateOpen] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState(() => createAvatarUrl());
   const health = useQuery({
     queryKey: ["health"],
     queryFn: client.health,
@@ -38,6 +41,17 @@ export function DashboardPage() {
     onSuccess: refresh,
     onError: (e: Error) => void message.error(e.message),
   });
+  const create = useMutation({
+    mutationFn: () => client.createAccount(displayName.trim(), avatarUrl),
+    onSuccess: (account) => {
+      setCreateOpen(false);
+      setDisplayName("");
+      setAvatarUrl(createAvatarUrl());
+      refresh();
+      void message.success(`${account.displayName} 已创建，可继续连接消息网关`);
+    },
+    onError: (e: Error) => void message.error(e.message),
+  });
   const activeGroups = groups.data?.filter((g) => g.status === "active").length ?? 0;
   const activeAgents = groups.data?.filter((g) => g.activeAgentRunId).length ?? 0;
   return (
@@ -46,10 +60,7 @@ export function DashboardPage() {
         <Alert className="viewer-alert" type="info" showIcon message="当前为只读查看者，写操作已隐藏。" />
       )}
       <div className="section-intro">
-        <div>
-          <span className="section-kicker">实时运行</span>
-          <Typography.Title level={2}>运行状态</Typography.Title>
-        </div>
+        <Typography.Title level={2}>运行状态</Typography.Title>
         <Typography.Text type="secondary">
           {health.isSuccess
             ? `控制面健康 · Schema v${health.data.schemaVersion}`
@@ -106,6 +117,19 @@ export function DashboardPage() {
             <small>账号状态机</small>
           </div>
         }
+        extra={
+          admin && (
+            <Button
+              type="primary"
+              onClick={() => {
+                setAvatarUrl(createAvatarUrl());
+                setCreateOpen(true);
+              }}
+            >
+              新建服务账号
+            </Button>
+          )
+        }
         className="section-card premium-card"
       >
         <Table
@@ -116,12 +140,14 @@ export function DashboardPage() {
           columns={[
             {
               title: "账号",
-              dataIndex: "id",
-              render: (value) => (
-                <Space>
-                  <span className="account-glyph">{value.slice(-1)}</span>
-                  <strong>{value}</strong>
-                </Space>
+              render: (_, record) => (
+                <div className="account-profile-cell">
+                  <Avatar src={record.avatarUrl}>{record.displayName.slice(0, 1)}</Avatar>
+                  <span>
+                    <strong>{record.displayName}</strong>
+                    <small>{record.id}</small>
+                  </span>
+                </div>
               ),
             },
             { title: "平台身份", dataIndex: "platformUserId", render: (value) => value ?? "尚未连接" },
@@ -164,8 +190,45 @@ export function DashboardPage() {
           ]}
         />
       </Card>
+      <Modal
+        title="新建服务账号"
+        open={createOpen}
+        okText="创建账号"
+        cancelText="取消"
+        confirmLoading={create.isPending}
+        okButtonProps={{ disabled: displayName.trim().length < 2 }}
+        onOk={() => create.mutate()}
+        onCancel={() => setCreateOpen(false)}
+      >
+        <div className="create-account-form">
+          <div className="avatar-picker">
+            <Avatar size={76} src={avatarUrl}>
+              {displayName.trim().slice(0, 1) || "助"}
+            </Avatar>
+            <Button onClick={() => setAvatarUrl(createAvatarUrl())}>换一个头像</Button>
+          </div>
+          <label>
+            <span>助手名称</span>
+            <Input
+              autoFocus
+              maxLength={30}
+              placeholder="例如：小林助手"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              onPressEnter={() => displayName.trim().length >= 2 && create.mutate()}
+            />
+          </label>
+          <Typography.Text type="secondary">
+            新账号会以空闲状态创建，连接消息网关后才能加入群聊。
+          </Typography.Text>
+        </div>
+      </Modal>
     </>
   );
+}
+
+function createAvatarUrl(): string {
+  return `https://api.dicebear.com/10.x/lorelei/svg?seed=${crypto.randomUUID()}`;
 }
 
 function RateLimitCountdown({ value }: { value: string | null }) {

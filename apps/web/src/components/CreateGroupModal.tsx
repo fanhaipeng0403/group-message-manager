@@ -59,7 +59,10 @@ export function CreateGroupModal({ open, onClose }: { open: boolean; onClose: ()
         >
           <Select
             placeholder="选择一个在线账号作为群主"
-            options={onlineAccounts.map((account) => ({ label: account.id, value: account.id }))}
+            options={onlineAccounts.map((account) => ({
+              label: `${account.displayName} · ${account.id.slice(0, 12)}`,
+              value: account.id,
+            }))}
             onChange={(nextCreatorId) => {
               const members = (form.getFieldValue("memberAccountIds") as string[] | undefined) ?? [];
               form.setFieldValue(
@@ -79,7 +82,10 @@ export function CreateGroupModal({ open, onClose }: { open: boolean; onClose: ()
             placeholder="选择其他在线账号"
             options={onlineAccounts
               .filter((account) => account.id !== creatorAccountId)
-              .map((account) => ({ label: account.id, value: account.id }))}
+              .map((account) => ({
+                label: `${account.displayName} · ${account.id.slice(0, 12)}`,
+                value: account.id,
+              }))}
           />
         </Form.Item>
         <Button type="primary" htmlType="submit" block loading={create.isPending}>

@@ -11,6 +11,10 @@ import { AccountIdParamsSchema, BearerSecurity, ErrorResponses } from "../../com
 const TransitionSchema = z.object({ to: AccountStatusSchema, expectedFrom: AccountStatusSchema });
 const ConnectedAccountSchema = z.object({ status: z.literal("online"), platformUserId: z.string() });
 const TransitionResultSchema = z.object({ status: AccountStatusSchema });
+const CreateAccountSchema = z.object({
+  displayName: z.string().trim().min(2).max(30),
+  avatarUrl: z.string().url().max(2_048).optional(),
+});
 
 export function registerAccountRoutes(
   app: FastifyInstance,
@@ -19,6 +23,49 @@ export function registerAccountRoutes(
   accounts: AccountService,
 ): void {
   const api = app.withTypeProvider<ZodTypeProvider>();
+  api.post(
+    "/api/accounts",
+    {
+      preHandler: requireAdmin,
+      schema: {
+        operationId: "createAccount",
+        tags: ["Accounts"],
+        summary: "新建服务账号",
+        description: "创建一个 idle 状态的服务账号；连接外部消息网关仍需单独执行 connect。",
+        security: BearerSecurity,
+        body: CreateAccountSchema,
+        response: { 201: AccountSchema, ...ErrorResponses },
+      },
+    },
+    async (request, reply) => {
+      const id = `assistant-${crypto.randomUUID()}`;
+      const avatarUrl =
+        request.body.avatarUrl ?? `https://api.dicebear.com/10.x/lorelei/svg?seed=${encodeURIComponent(id)}`;
+      const result = await pool.query<{
+        id: string;
+        display_name: string;
+        avatar_url: string | null;
+        status: z.infer<typeof AccountStatusSchema>;
+        platform_user_id: string | null;
+        rate_limited_until: Date | null;
+      }>(
+        `INSERT INTO accounts (id, display_name, avatar_url)
+         VALUES ($1, $2, $3)
+         RETURNING id, display_name, avatar_url, status, platform_user_id, rate_limited_until`,
+        [id, request.body.displayName, avatarUrl],
+      );
+      const account = result.rows[0]!;
+      return reply.status(201).send({
+        id: account.id,
+        displayName: account.display_name,
+        avatarUrl: account.avatar_url,
+        status: account.status,
+        platformUserId: account.platform_user_id,
+        rateLimitedUntil: account.rate_limited_until?.toISOString() ?? null,
+      });
+    },
+  );
+
   api.get(
     "/api/accounts",
     {
@@ -34,12 +81,18 @@ export function registerAccountRoutes(
     async () => {
       const result = await pool.query<{
         id: string;
+        display_name: string;
+        avatar_url: string | null;
         status: z.infer<typeof AccountStatusSchema>;
         platform_user_id: string | null;
         rate_limited_until: Date | null;
-      }>("SELECT id, status, platform_user_id, rate_limited_until FROM accounts ORDER BY id");
+      }>(
+        "SELECT id, display_name, avatar_url, status, platform_user_id, rate_limited_until FROM accounts ORDER BY created_at, id",
+      );
       return result.rows.map((row) => ({
         id: row.id,
+        displayName: row.display_name,
+        avatarUrl: row.avatar_url,
         status: row.status,
         platformUserId: row.platform_user_id,
         rateLimitedUntil: row.rate_limited_until?.toISOString() ?? null,

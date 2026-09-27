@@ -69,6 +69,7 @@ export function LiveUpdates() {
           void queryClient.invalidateQueries();
         }
         if (event.type && ["message", "agent_run"].includes(event.type)) {
+          if (event.type === "agent_run") void queryClient.invalidateQueries({ queryKey: ["groups"] });
           void queryClient.invalidateQueries({ queryKey: ["group", event.payload?.groupId] });
           void queryClient.invalidateQueries({ queryKey: ["messages", event.payload?.groupId] });
           void queryClient.invalidateQueries({ queryKey: ["agent-runs", event.payload?.groupId] });

@@ -16,6 +16,8 @@ export const terminalAccountStatuses = ["suspended", "session_expired"] as const
 
 export const AccountSchema = z.object({
   id: z.string(),
+  displayName: z.string(),
+  avatarUrl: z.string().nullable(),
   status: AccountStatusSchema,
   platformUserId: z.string().nullable(),
   rateLimitedUntil: z.string().nullable(),
@@ -38,6 +40,7 @@ export const GroupSchema = z.object({
   members: z.array(GroupMemberSchema),
   activeSequenceRunId: z.string().nullable(),
   activeAgentRunId: z.string().nullable(),
+  latestAgentRunStatus: z.enum(["running", "finished", "failed", "blocked", "cancelled"]).nullable(),
 });
 export type Group = z.infer<typeof GroupSchema>;
 

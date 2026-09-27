@@ -11,7 +11,6 @@ import {
   Input,
   List,
   Popconfirm,
-  Select,
   Space,
   Switch,
   Tag,
@@ -41,6 +40,8 @@ export function GroupPage() {
   const [showDemoComposer, setShowDemoComposer] = useState(false);
   const [showTechnicalHistory, setShowTechnicalHistory] = useState(false);
   const [groupSearch, setGroupSearch] = useState("");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>();
+  const [workQueue, setWorkQueue] = useState<"all" | "agent" | "attention">("all");
   const [demoText, setDemoText] = useState("");
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<"agent" | "automation" | "members">("agent");
@@ -48,6 +49,7 @@ export function GroupPage() {
   const conversationBodyRef = useRef<HTMLElement>(null);
 
   const groups = useQuery({ queryKey: ["groups"], queryFn: client.groups, refetchInterval: 30_000 });
+  const accounts = useQuery({ queryKey: ["accounts"], queryFn: client.accounts, refetchInterval: 30_000 });
   const group = useQuery({
     queryKey: ["group", id],
     queryFn: () => client.group(id),
@@ -118,7 +120,7 @@ export function GroupPage() {
     mutationFn: () => client.leaveAll(id),
     onSuccess: ({ jobId }) => {
       setLeaveJobId(jobId);
-      void message.success("全员退群任务已经提交");
+      void message.success("服务账号退出任务已经提交");
     },
     onError: (error: Error) => void message.error(error.message),
   });
@@ -167,9 +169,44 @@ export function GroupPage() {
   const latestMessageKey = allMessageItems.length
     ? (allMessageItems.at(-1)?.clientMsgId ?? allMessageItems.at(-1)?.msgId)
     : undefined;
-  const visibleGroups = (groups.data ?? []).filter((item) =>
-    `群聊 ${item.id} ${item.gatewayGroupId}`.toLowerCase().includes(groupSearch.trim().toLowerCase()),
+  const accountStatuses = useMemo(
+    () => new Map((accounts.data ?? []).map((account) => [account.id, account.status])),
+    [accounts.data],
   );
+  const accountById = useMemo(
+    () => new Map((accounts.data ?? []).map((account) => [account.id, account])),
+    [accounts.data],
+  );
+  const accountByPlatformId = useMemo(
+    () =>
+      new Map(
+        (accounts.data ?? [])
+          .filter((account) => account.platformUserId)
+          .map((account) => [account.platformUserId!, account]),
+      ),
+    [accounts.data],
+  );
+  const needsAttention = (item: NonNullable<typeof groups.data>[number]) =>
+    item.status !== "active" ||
+    ["blocked", "failed"].includes(item.latestAgentRunStatus ?? "") ||
+    item.members.some((member) => {
+      const status = member.accountId ? accountStatuses.get(member.accountId) : undefined;
+      return status !== undefined && status !== "online";
+    });
+  const accountGroups = (groups.data ?? []).filter(
+    (item) => !selectedAccountId || item.members.some((member) => member.accountId === selectedAccountId),
+  );
+  const agentGroupCount = accountGroups.filter((item) => item.agentEnabled).length;
+  const attentionGroupCount = accountGroups.filter(needsAttention).length;
+  const visibleGroups = accountGroups
+    .filter(
+      (item) => workQueue === "all" || (workQueue === "agent" ? item.agentEnabled : needsAttention(item)),
+    )
+    .filter((item) =>
+      `${groupDisplayName(item, accountById)} ${item.id} ${item.gatewayGroupId}`
+        .toLowerCase()
+        .includes(groupSearch.trim().toLowerCase()),
+    );
 
   useEffect(() => {
     const body = conversationBodyRef.current;
@@ -185,51 +222,129 @@ export function GroupPage() {
   if (group.isError) return <Alert type="error" message={(group.error as Error).message} />;
   const data = group.data;
   const currentRun = run.data;
+  const senderMember = selectedAccountId
+    ? data?.members.find((member) => member.accountId === selectedAccountId)
+    : (data?.members.find((member) => member.accountId === data.creatorAccountId) ??
+      data?.members.find((member) => member.accountId));
 
   return (
     <div className="chat-workspace">
       <aside className="chat-groups-panel">
-        <div className="chat-panel-brand">
-          <Link to="/overview">← 运营总览</Link>
-          <div className="chat-panel-title-row">
-            <Typography.Title level={3}>群组会话</Typography.Title>
-            {admin && (
-              <Button type="primary" shape="circle" size="small" onClick={() => setCreateGroupOpen(true)}>
-                +
-              </Button>
+        <nav className="account-rail" aria-label="服务账号">
+          <button
+            className={!selectedAccountId ? "active" : ""}
+            title="显示全部账号的群聊"
+            aria-label="全部账号"
+            onClick={() => setSelectedAccountId(undefined)}
+          >
+            <span className="account-rail-all" aria-hidden="true">
+              全
+            </span>
+          </button>
+          <div className="account-rail-divider" />
+          {(accounts.data ?? []).map((account, index) => (
+            <button
+              key={account.id}
+              className={selectedAccountId === account.id ? "active" : ""}
+              title={`${account.displayName} · ${accountStatusLabel(account.status)}`}
+              aria-label={`${account.displayName}，${accountStatusLabel(account.status)}`}
+              onClick={() => setSelectedAccountId(account.id)}
+            >
+              <Avatar src={account.avatarUrl} className={`account-rail-avatar tone-${index % 4}`}>
+                {account.displayName.slice(0, 1)}
+              </Avatar>
+              <i className={`account-state-dot ${account.status}`} />
+            </button>
+          ))}
+        </nav>
+
+        <div className="chat-directory">
+          <div className="chat-panel-brand">
+            <Link to="/overview">← 运行总览</Link>
+            <div className="chat-panel-title-row">
+              <Typography.Title level={3}>消息工作台</Typography.Title>
+              {admin && (
+                <Button type="primary" shape="circle" size="small" onClick={() => setCreateGroupOpen(true)}>
+                  +
+                </Button>
+              )}
+            </div>
+            <Typography.Text type="secondary">
+              {selectedAccountId
+                ? `${accountById.get(selectedAccountId)?.displayName ?? selectedAccountId} 的群聊`
+                : "统一管理所有服务群聊"}
+            </Typography.Text>
+          </div>
+
+          <div className="work-queue-list">
+            <button className={workQueue === "all" ? "active" : ""} onClick={() => setWorkQueue("all")}>
+              <span>
+                <i>聊</i>全部群聊
+              </span>
+              <b>{accountGroups.length}</b>
+            </button>
+            <button className={workQueue === "agent" ? "active" : ""} onClick={() => setWorkQueue("agent")}>
+              <span>
+                <i className="ai">AI</i>Agent 托管
+              </span>
+              <b>{agentGroupCount}</b>
+            </button>
+            <button
+              className={workQueue === "attention" ? "active" : ""}
+              onClick={() => setWorkQueue("attention")}
+            >
+              <span>
+                <i className="attention">!</i>需要关注
+              </span>
+              <b>{attentionGroupCount}</b>
+            </button>
+          </div>
+
+          <Input
+            className="chat-group-search"
+            placeholder="搜索群聊"
+            prefix="⌕"
+            value={groupSearch}
+            onChange={(event) => setGroupSearch(event.target.value)}
+          />
+          <div className="chat-list-label">
+            <span>{workQueueLabel(workQueue)}</span>
+            <b>{visibleGroups.length}</b>
+          </div>
+          <div className="chat-group-list">
+            {visibleGroups.map((item) => {
+              const attention = needsAttention(item);
+              return (
+                <Link
+                  to={`/groups/${item.id}`}
+                  className={`chat-group-item ${item.id === id ? "active" : ""}`}
+                  key={item.id}
+                >
+                  <Avatar className="chat-group-avatar">群</Avatar>
+                  <span className="chat-group-copy">
+                    <b title={groupDisplayName(item, accountById)}>{groupDisplayName(item, accountById)}</b>
+                    <small className={attention ? "attention" : ""}>
+                      {attention
+                        ? groupAttentionLabel(item.status, item.latestAgentRunStatus)
+                        : item.activeAgentRunId
+                          ? "Agent 正在处理消息"
+                          : item.agentEnabled
+                            ? `AI 已托管 · ${item.members.length} 位成员`
+                            : `${item.members.length} 位成员`}
+                    </small>
+                  </span>
+                  <i className={`presence-dot ${attention ? "attention" : item.status}`} />
+                </Link>
+              );
+            })}
+            {!groups.isLoading && !visibleGroups.length && (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有符合条件的群聊" />
             )}
           </div>
-          <Typography.Text type="secondary">统一管理所有服务群聊</Typography.Text>
-        </div>
-        <Input
-          className="chat-group-search"
-          placeholder="搜索群组"
-          prefix="⌕"
-          value={groupSearch}
-          onChange={(event) => setGroupSearch(event.target.value)}
-        />
-        <div className="chat-group-list">
-          {visibleGroups.map((item) => (
-            <Link
-              to={`/groups/${item.id}`}
-              className={`chat-group-item ${item.id === id ? "active" : ""}`}
-              key={item.id}
-            >
-              <Avatar className="chat-group-avatar">群</Avatar>
-              <span className="chat-group-copy">
-                <b>服务群聊 {item.id.slice(0, 4)}</b>
-                <small>
-                  {item.activeAgentRunId ? "Agent 正在处理消息" : `${item.members.length} 位成员`}
-                </small>
-              </span>
-              <i className={`presence-dot ${item.status}`} />
-            </Link>
-          ))}
-          {!groups.isLoading && !groups.data?.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />}
-        </div>
-        <div className="chat-groups-foot">
-          <span className="live-pulse" />
-          实时连接正常
+          <div className="chat-groups-foot">
+            <span className="live-pulse" />
+            实时连接正常
+          </div>
         </div>
       </aside>
 
@@ -237,11 +352,11 @@ export function GroupPage() {
         <header className="conversation-head">
           <div>
             <Space size={10}>
-              <Typography.Title level={3}>服务群聊 {id.slice(0, 4)}</Typography.Title>
+              <Typography.Title level={3}>{groupDisplayName(data, accountById)}</Typography.Title>
               <StatusTag value={data?.status ?? null} />
             </Space>
             <p>
-              {data?.members.length ?? 0} 位成员 · 网关 {data?.gatewayGroupId ?? "连接中"}
+              {data?.members.length ?? 0} 位成员 · {data?.agentEnabled ? "智能助手已托管" : "人工管理中"}
             </p>
           </div>
           <Space>
@@ -270,10 +385,10 @@ export function GroupPage() {
             }
             message={
               leaveJob.data.status === "running"
-                ? "全员退群任务执行中"
+                ? "服务账号退出任务执行中"
                 : leaveJob.data.status === "finished"
-                  ? "全员退群已完成"
-                  : "全员退群任务失败"
+                  ? "所有服务账号已退出群聊"
+                  : "服务账号退出任务失败"
             }
           />
         )}
@@ -315,13 +430,23 @@ export function GroupPage() {
                   className={`wechat-message ${item.isOwn ? "service-message" : "customer-message"}`}
                   key={item.clientMsgId ?? item.msgId}
                 >
-                  <Avatar className={item.isOwn ? "service-avatar" : "customer-avatar"}>
-                    {item.isOwn ? "服" : "客"}
+                  <Avatar
+                    src={
+                      item.isOwn ? accountByPlatformId.get(item.senderPlatformUserId)?.avatarUrl : undefined
+                    }
+                    className={item.isOwn ? "service-avatar" : "customer-avatar"}
+                  >
+                    {item.isOwn
+                      ? accountByPlatformId.get(item.senderPlatformUserId)?.displayName.slice(0, 1) || "服"
+                      : "客"}
                   </Avatar>
                   <div className="wechat-message-main">
                     <div className="wechat-message-meta">
                       <b>
-                        {item.isOwn ? item.senderPlatformUserId : `${item.senderPlatformUserId} · 外部客户`}
+                        {item.isOwn
+                          ? (accountByPlatformId.get(item.senderPlatformUserId)?.displayName ??
+                            item.senderPlatformUserId)
+                          : `${item.senderPlatformUserId} · 外部客户`}
                       </b>
                       <time>
                         {new Date(item.sentAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -388,19 +513,14 @@ export function GroupPage() {
                 </div>
               </div>
             ) : (
-              <Form form={sendForm} onFinish={(value) => send.mutate(value)}>
+              <Form
+                form={sendForm}
+                onFinish={(value: { text: string }) => {
+                  if (!senderMember?.accountId) return;
+                  send.mutate({ accountId: senderMember.accountId, text: value.text });
+                }}
+              >
                 <div className="composer-line">
-                  <Form.Item name="accountId" rules={[{ required: true, message: "请选择发送账号" }]}>
-                    <Select
-                      placeholder="选择服务账号"
-                      options={data.members
-                        .filter((member) => member.accountId)
-                        .map((member) => ({
-                          label: `${member.accountId} · ${roleLabel(member.role)}`,
-                          value: member.accountId!,
-                        }))}
-                    />
-                  </Form.Item>
                   <Form.Item
                     name="text"
                     rules={[{ required: true, message: "请输入消息" }]}
@@ -411,11 +531,20 @@ export function GroupPage() {
                       placeholder="以服务账号身份回复群消息…"
                     />
                   </Form.Item>
-                  <Button type="primary" htmlType="submit" loading={send.isPending}>
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    loading={send.isPending}
+                    disabled={!senderMember?.accountId}
+                  >
                     发送消息
                   </Button>
                 </div>
-                <small>消息会先写入可靠队列，再由网关异步发送。</small>
+                <small className={!senderMember?.accountId ? "composer-sender-error" : undefined}>
+                  {senderMember?.accountId
+                    ? `由 ${accountById.get(senderMember.accountId)?.displayName ?? senderMember.accountId}（${roleLabel(senderMember.role)}）发送 · 消息会先写入可靠队列，再由网关异步发送。`
+                    : `${selectedAccountId} 不在当前群聊中，无法发送消息。`}
+                </small>
               </Form>
             )}
           </footer>
@@ -559,8 +688,20 @@ export function GroupPage() {
                 renderItem={(member) => (
                   <List.Item>
                     <List.Item.Meta
-                      avatar={<Avatar>{member.accountId?.slice(-1) ?? "客"}</Avatar>}
-                      title={member.accountId ?? member.platformUserId}
+                      avatar={
+                        <Avatar
+                          src={member.accountId ? accountById.get(member.accountId)?.avatarUrl : undefined}
+                        >
+                          {member.accountId
+                            ? accountById.get(member.accountId)?.displayName.slice(0, 1) || "助"
+                            : "客"}
+                        </Avatar>
+                      }
+                      title={
+                        member.accountId
+                          ? (accountById.get(member.accountId)?.displayName ?? member.accountId)
+                          : member.platformUserId
+                      }
                       description={member.platformUserId}
                     />
                     <Tag
@@ -577,14 +718,14 @@ export function GroupPage() {
 
             {admin && data?.status === "active" && (
               <Popconfirm
-                title="确认让全部服务账号退出该群？"
-                description="系统会保证群主最后退出。"
+                title="确认让所有服务账号退出该群？"
+                description="不会踢除外部客户，历史消息仍会保留；群主最后退出。"
                 okText="确认退群"
                 cancelText="取消"
                 onConfirm={() => leaveAll.mutate()}
               >
                 <Button danger block loading={leaveAll.isPending}>
-                  全员退出群聊
+                  所有服务账号退出群聊
                 </Button>
               </Popconfirm>
             )}
@@ -666,6 +807,45 @@ function deliveryLabel(status: string): string {
 
 function roleLabel(role: string): string {
   return { creator: "群主", admin: "管理员", member: "成员" }[role] ?? role;
+}
+
+function accountStatusLabel(status: string): string {
+  return (
+    {
+      idle: "空闲",
+      online: "在线",
+      rate_limited: "限流中",
+      disconnected: "已离线",
+      suspended: "已停用",
+      session_expired: "会话失效",
+    }[status] ?? status
+  );
+}
+
+function workQueueLabel(queue: "all" | "agent" | "attention"): string {
+  return { all: "全部会话", agent: "Agent 托管", attention: "需要关注" }[queue];
+}
+
+function groupDisplayName(
+  group: { members: Array<{ accountId: string | null }> } | undefined,
+  accounts: Map<string, { displayName: string }>,
+): string {
+  if (!group) return "群聊加载中";
+  const names = group.members.flatMap((member) => {
+    if (!member.accountId) return [];
+    const account = accounts.get(member.accountId);
+    return account ? [account.displayName] : [];
+  });
+  if (!names.length) return "未命名群聊";
+  return `${names.slice(0, 2).join("、")}${names.length > 2 ? "…" : ""}`;
+}
+
+function groupAttentionLabel(status: string, agentStatus: string | null): string {
+  if (status === "unreachable") return "群聊不可写，需要处理";
+  if (status === "left") return "服务账号已退出";
+  if (agentStatus === "blocked") return "Agent 已阻断，需要人工处理";
+  if (agentStatus === "failed") return "Agent 运行失败，需要检查";
+  return "服务账号状态异常";
 }
 
 function isTechnicalTrigger(senderPlatformUserId: string, text: string): boolean {

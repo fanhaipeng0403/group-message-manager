@@ -28,7 +28,7 @@ export function AppShell() {
               运行总览
             </Link>
             <Link to="/" className={active === "conversations" ? "active" : ""}>
-              群组与会话
+              消息工作台
             </Link>
             <Link to="/reliability-lab" className={active === "lab" ? "active" : ""}>
               系统验证
