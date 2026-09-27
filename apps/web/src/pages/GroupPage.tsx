@@ -186,13 +186,17 @@ export function GroupPage() {
       ),
     [accounts.data],
   );
-  const needsAttention = (item: NonNullable<typeof groups.data>[number]) =>
-    item.status !== "active" ||
-    ["blocked", "failed"].includes(item.latestAgentRunStatus ?? "") ||
-    item.members.some((member) => {
-      const status = member.accountId ? accountStatuses.get(member.accountId) : undefined;
-      return status !== undefined && status !== "online";
-    });
+  const needsAttention = (item: NonNullable<typeof groups.data>[number]) => {
+    if (item.status === "left") return false;
+    return (
+      item.status === "unreachable" ||
+      ["blocked", "failed"].includes(item.latestAgentRunStatus ?? "") ||
+      item.members.some((member) => {
+        const status = member.accountId ? accountStatuses.get(member.accountId) : undefined;
+        return status !== undefined && ["disconnected", "suspended", "session_expired"].includes(status);
+      })
+    );
+  };
   const accountGroups = (groups.data ?? []).filter(
     (item) => !selectedAccountId || item.members.some((member) => member.accountId === selectedAccountId),
   );
@@ -294,7 +298,7 @@ export function GroupPage() {
               onClick={() => setWorkQueue("attention")}
             >
               <span>
-                <i className="attention">!</i>需要关注
+                <i className="attention">!</i>待处理
               </span>
               <b>{attentionGroupCount}</b>
             </button>
@@ -823,7 +827,7 @@ function accountStatusLabel(status: string): string {
 }
 
 function workQueueLabel(queue: "all" | "agent" | "attention"): string {
-  return { all: "全部会话", agent: "Agent 托管", attention: "需要关注" }[queue];
+  return { all: "全部会话", agent: "Agent 托管", attention: "待处理" }[queue];
 }
 
 function groupDisplayName(
@@ -842,7 +846,6 @@ function groupDisplayName(
 
 function groupAttentionLabel(status: string, agentStatus: string | null): string {
   if (status === "unreachable") return "群聊不可写，需要处理";
-  if (status === "left") return "服务账号已退出";
   if (agentStatus === "blocked") return "Agent 已阻断，需要人工处理";
   if (agentStatus === "failed") return "Agent 运行失败，需要检查";
   return "服务账号状态异常";
