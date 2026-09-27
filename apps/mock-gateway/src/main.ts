@@ -67,7 +67,9 @@ const defaults: Control = {
 };
 
 const app = Fastify({ logger: true });
-const stateStore = new GatewayStateStore(process.env.DATABASE_URL);
+const stateStore = new GatewayStateStore(
+  process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:55432/messaging_platform",
+);
 const restored = await stateStore.load();
 const accounts = new Map<string, Account>(
   restored?.accounts.map(([id, account]) => [
