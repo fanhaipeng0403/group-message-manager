@@ -1013,11 +1013,6 @@ a {
 .card-title span {
   font: 750 16px "Manrope";
 }
-.card-title small {
-  color: #98a2b3;
-  font-size: 12px;
-  letter-spacing: 0;
-}
 .account-profile-cell {
   display: flex;
   align-items: center;

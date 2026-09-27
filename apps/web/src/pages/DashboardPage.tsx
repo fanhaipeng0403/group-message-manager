@@ -115,7 +115,6 @@ export function DashboardPage() {
         title={
           <div className="card-title">
             <span>服务账号</span>
-            <small>账号状态机</small>
           </div>
         }
         extra={
