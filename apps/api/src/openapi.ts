@@ -37,6 +37,7 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
   await app.register(swaggerUi, {
     routePrefix: "/docs",
     uiConfig: { docExpansion: "list", deepLinking: true, persistAuthorization: true },
-    staticCSP: true,
+    // `staticCSP: true` adds upgrade-insecure-requests and breaks /docs over plain HTTP.
+    staticCSP: false,
   });
 }
