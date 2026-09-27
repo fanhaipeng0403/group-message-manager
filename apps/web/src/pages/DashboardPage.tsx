@@ -74,7 +74,7 @@ export function DashboardPage() {
       )}
       <div className="section-intro">
         <div>
-          <span className="section-kicker">REAL-TIME OPERATIONS</span>
+          <span className="section-kicker">实时运行</span>
           <Typography.Title level={2}>基础设施运行态势</Typography.Title>
         </div>
         <Typography.Text type="secondary">
@@ -110,7 +110,7 @@ export function DashboardPage() {
         <Col xs={24} md={8}>
           <Card className="metric-card metric-blue">
             <div className="metric-head">
-              <span>MANAGED IDENTITIES</span>
+              <span>服务账号</span>
               <i>01</i>
             </div>
             <strong>{accounts.data?.length ?? 0}</strong>
@@ -123,7 +123,7 @@ export function DashboardPage() {
         <Col xs={24} md={8}>
           <Card className="metric-card metric-violet">
             <div className="metric-head">
-              <span>ACTIVE GROUPS</span>
+              <span>活跃群组</span>
               <i>02</i>
             </div>
             <strong>{activeGroups}</strong>
@@ -136,7 +136,7 @@ export function DashboardPage() {
         <Col xs={24} md={8}>
           <Card className="metric-card metric-emerald">
             <div className="metric-head">
-              <span>AGENT EXECUTION</span>
+              <span>Agent 执行</span>
               <i>03</i>
             </div>
             <strong>{activeAgents}</strong>
@@ -149,33 +149,31 @@ export function DashboardPage() {
       </Row>
       <section className="architecture-strip">
         <div className="architecture-copy">
-          <span className="section-kicker">SYSTEM ARCHITECTURE</span>
-          <h3>一条消息，从不确定到可证明</h3>
-          <p>每个外部副作用都有本地身份、持久化状态和恢复路径。</p>
+          <span className="section-kicker">系统架构</span>
         </div>
         <div className="architecture-flow">
           <div>
             <b>01</b>
-            <span>Gateway</span>
+            <span>消息网关</span>
             <small>重复 · 超时 · 限流</small>
           </div>
           <i>→</i>
           <div className="featured">
             <b>02</b>
-            <span>Durable Core</span>
-            <small>Inbox · Outbox · Lease</small>
+            <span>持久化核心</span>
+            <small>收件箱 · 发件箱 · 租约</small>
           </div>
           <i>→</i>
           <div>
             <b>03</b>
-            <span>Agent Runtime</span>
-            <small>Validate · Audit · Execute</small>
+            <span>Agent 运行时</span>
+            <small>校验 · 审计 · 执行</small>
           </div>
           <i>→</i>
           <div>
             <b>04</b>
-            <span>Operator</span>
-            <small>Observe · Explain · Recover</small>
+            <span>操作员</span>
+            <small>观察 · 解释 · 恢复</small>
           </div>
         </div>
       </section>
@@ -183,7 +181,7 @@ export function DashboardPage() {
         title={
           <div className="card-title">
             <span>服务账号</span>
-            <small>ACCOUNT STATE MACHINE</small>
+            <small>账号状态机</small>
           </div>
         }
         className="section-card premium-card"
@@ -248,7 +246,7 @@ export function DashboardPage() {
         title={
           <div className="card-title">
             <span>群组空间</span>
-            <small>ORCHESTRATION WORKSPACES</small>
+            <small>群组编排</small>
           </div>
         }
         className="section-card premium-card"

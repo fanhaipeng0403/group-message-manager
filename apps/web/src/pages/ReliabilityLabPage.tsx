@@ -139,13 +139,6 @@ export function ReliabilityLabPage() {
 
   return (
     <>
-      <Alert
-        className="viewer-alert"
-        type="info"
-        showIcon
-        message="这里不是前端演示动画"
-        description="按钮会真实配置故障、注入消息并运行 Inbox / Outbox / Agent Worker；通过条件来自 PostgreSQL 记录和网关反查。实验能力可通过 DEMO_MODE=false 在生产关闭。"
-      />
       {!activeGroups.length && (
         <Alert type="warning" showIcon message="请先回到运行总览：连接账号并创建一个群组。" />
       )}
@@ -206,7 +199,7 @@ export function ReliabilityLabPage() {
         title={
           <div className="card-title">
             <span>实验记录</span>
-            <small>PERSISTED EVIDENCE LEDGER</small>
+            <small>已保存的实验证据</small>
           </div>
         }
         extra={
