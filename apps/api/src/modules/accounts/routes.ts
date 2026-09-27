@@ -38,31 +38,46 @@ export function registerAccountRoutes(
       },
     },
     async (request, reply) => {
-      const id = `assistant-${crypto.randomUUID()}`;
-      const avatarUrl =
-        request.body.avatarUrl ?? `https://api.dicebear.com/10.x/lorelei/svg?seed=${encodeURIComponent(id)}`;
-      const result = await pool.query<{
-        id: string;
-        display_name: string;
-        avatar_url: string | null;
-        status: z.infer<typeof AccountStatusSchema>;
-        platform_user_id: string | null;
-        rate_limited_until: Date | null;
-      }>(
-        `INSERT INTO accounts (id, display_name, avatar_url)
-         VALUES ($1, $2, $3)
-         RETURNING id, display_name, avatar_url, status, platform_user_id, rate_limited_until`,
-        [id, request.body.displayName, avatarUrl],
-      );
-      const account = result.rows[0]!;
-      return reply.status(201).send({
-        id: account.id,
-        displayName: account.display_name,
-        avatarUrl: account.avatar_url,
-        status: account.status,
-        platformUserId: account.platform_user_id,
-        rateLimitedUntil: account.rate_limited_until?.toISOString() ?? null,
-      });
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT pg_advisory_xact_lock(hashtext('service-account-id'))");
+        const next = await client.query<{ n: number }>(
+          `SELECT COALESCE(MAX(SUBSTRING(id FROM '^account-([0-9]+)$')::int), 0) + 1 AS n FROM accounts`,
+        );
+        const id = `account-${Number(next.rows[0]!.n)}`;
+        const avatarUrl =
+          request.body.avatarUrl ??
+          `https://api.dicebear.com/10.x/lorelei/svg?seed=${encodeURIComponent(id)}`;
+        const result = await client.query<{
+          id: string;
+          display_name: string;
+          avatar_url: string | null;
+          status: z.infer<typeof AccountStatusSchema>;
+          platform_user_id: string | null;
+          rate_limited_until: Date | null;
+        }>(
+          `INSERT INTO accounts (id, display_name, avatar_url)
+           VALUES ($1, $2, $3)
+           RETURNING id, display_name, avatar_url, status, platform_user_id, rate_limited_until`,
+          [id, request.body.displayName, avatarUrl],
+        );
+        await client.query("COMMIT");
+        const account = result.rows[0]!;
+        return reply.status(201).send({
+          id: account.id,
+          displayName: account.display_name,
+          avatarUrl: account.avatar_url,
+          status: account.status,
+          platformUserId: account.platform_user_id,
+          rateLimitedUntil: account.rate_limited_until?.toISOString() ?? null,
+        });
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
     },
   );
 
