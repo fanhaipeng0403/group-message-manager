@@ -1,0 +1,6 @@
+**/dist
+**/node_modules
+coverage
+media
+.idea
+pnpm-lock.yaml
