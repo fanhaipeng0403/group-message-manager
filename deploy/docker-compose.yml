@@ -1,4 +1,6 @@
 # Build images first: set -a && source deploy/.env && set +a && ./deploy/build-images.sh
+version: "3.3"
+
 services:
   gateway:
     image: group-message-manager-node:${GMM_IMAGE_TAG}
