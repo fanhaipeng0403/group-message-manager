@@ -1,0 +1,44 @@
+{
+  "name": "multi-account-messaging-platform",
+  "private": true,
+  "packageManager": "pnpm@10.25.0",
+  "scripts": {
+    "build": "pnpm --filter @platform/contracts build && pnpm --filter './apps/*' build",
+    "dev": "pnpm --filter @platform/contracts build && concurrently -n api,web,gateway,agent -c blue,magenta,green,yellow \"pnpm --filter @platform/api dev\" \"pnpm --filter @platform/web dev\" \"pnpm --filter @platform/mock-gateway dev\" \"pnpm --filter @platform/mock-agent dev\"",
+    "lint": "pnpm lint:eslint && pnpm lint:typecheck && pnpm format:check",
+    "lint:eslint": "eslint .",
+    "lint:typecheck": "pnpm -r lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm --filter @platform/contracts build && pnpm -r test",
+    "prepare": "husky",
+    "db:migrate": "pnpm --filter @platform/api db:migrate",
+    "infra:up": "docker compose up -d postgres",
+    "scenario": "node scripts/run-scenario.mjs",
+    "lab:verify": "node scripts/run-reliability-lab.mjs",
+    "auth:verify": "node scripts/verify-auth-session.mjs",
+    "sequence:verify": "node scripts/verify-sequences.mjs",
+    "group-lifecycle:verify": "node scripts/verify-group-lifecycle.mjs"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml,css,html}": "prettier --write"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^9.2.1",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.12.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "prettier": "^3.9.9",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.1"
+  }
+}
