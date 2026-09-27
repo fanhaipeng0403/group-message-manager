@@ -10,6 +10,7 @@ describe("database migrations", () => {
     "keeps tool calls unique while allowing three protocol-error steps in one run",
     async () => {
       const pool = createPool(testDatabaseUrl!);
+      let groupId: string | undefined;
       try {
         await pool.query("DROP SCHEMA public CASCADE");
         await pool.query("CREATE SCHEMA public");
@@ -20,9 +21,10 @@ describe("database migrations", () => {
         const group = await pool.query<{ id: string }>(
           "INSERT INTO groups (creator_account_id) VALUES ('account-1') RETURNING id",
         );
+        groupId = group.rows[0]!.id;
         const run = await pool.query<{ id: string }>(
           "INSERT INTO agent_runs (group_id) VALUES ($1) RETURNING id",
-          [group.rows[0]!.id],
+          [groupId],
         );
         const runId = run.rows[0]!.id;
 
@@ -54,6 +56,7 @@ describe("database migrations", () => {
         );
         expect(steps.rows[0]?.count).toBe(4);
       } finally {
+        if (groupId) await pool.query("DELETE FROM groups WHERE id = $1", [groupId]);
         await pool.end();
       }
     },

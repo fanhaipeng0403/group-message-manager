@@ -60,4 +60,7 @@ jobs:
             exit 1
           fi
 
-          pnpm scenario smoke
+          if ! pnpm scenario smoke; then
+            cat /tmp/group-message-manager.log
+            exit 1
+          fi
