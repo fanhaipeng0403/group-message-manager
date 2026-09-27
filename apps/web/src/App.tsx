@@ -1,8 +1,12 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { getToken } from "./api/client";
 import { AppShell } from "./components/AppShell";
 import { LiveUpdates } from "./components/LiveUpdates";
+
+function Page({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<div className="page-loading">正在载入…</div>}>{children}</Suspense>;
+}
 
 const DashboardPage = lazy(() =>
   import("./pages/DashboardPage").then((module) => ({ default: module.DashboardPage })),
@@ -29,17 +33,50 @@ function Protected() {
 
 export function App() {
   return (
-    <Suspense fallback={<div className="route-loading">正在载入控制台…</div>}>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route element={<Protected />}>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/groups/:id" element={<GroupPage />} />
-          <Route path="/reliability-lab" element={<ReliabilityLabPage />} />
-          <Route path="/sequences" element={<SequencePage />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Suspense>
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          <Suspense fallback={<div className="route-loading">正在载入控制台…</div>}>
+            <LoginPage />
+          </Suspense>
+        }
+      />
+      <Route element={<Protected />}>
+        <Route
+          path="/"
+          element={
+            <Page>
+              <DashboardPage />
+            </Page>
+          }
+        />
+        <Route
+          path="/groups/:id"
+          element={
+            <Page>
+              <GroupPage />
+            </Page>
+          }
+        />
+        <Route
+          path="/reliability-lab"
+          element={
+            <Page>
+              <ReliabilityLabPage />
+            </Page>
+          }
+        />
+        <Route
+          path="/sequences"
+          element={
+            <Page>
+              <SequencePage />
+            </Page>
+          }
+        />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }

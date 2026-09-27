@@ -139,56 +139,6 @@ export function ReliabilityLabPage() {
 
   return (
     <>
-      <section className="lab-hero">
-        <div>
-          <div className="eyebrow">
-            <span /> FAILURE IS A FIRST-CLASS INPUT
-          </div>
-          <Typography.Title>
-            可靠性不是承诺，
-            <br />
-            <em>而是可重复的证据。</em>
-          </Typography.Title>
-          <Typography.Paragraph>
-            主动注入重复事件、限流、504 和异常 Agent 响应。真实 Worker 执行、PostgreSQL
-            留痕、系统自动判定结果。
-          </Typography.Paragraph>
-          <Select
-            className="lab-group-select"
-            value={selectedGroupId}
-            onChange={setGroupId}
-            placeholder="选择一个活跃群组"
-            options={activeGroups.map((group) => ({
-              value: group.id,
-              label: `实验群组 · ${group.id.slice(0, 8)}`,
-            }))}
-          />
-        </div>
-        <div className="lab-method">
-          <span>HOW IT WORKS</span>
-          <div>
-            <b>01</b>
-            <p>
-              <strong>Inject</strong>
-              <small>注入确定性故障</small>
-            </p>
-          </div>
-          <div>
-            <b>02</b>
-            <p>
-              <strong>Execute</strong>
-              <small>走正常业务 Worker</small>
-            </p>
-          </div>
-          <div>
-            <b>03</b>
-            <p>
-              <strong>Prove</strong>
-              <small>从数据库反查证据</small>
-            </p>
-          </div>
-        </div>
-      </section>
       <Alert
         className="viewer-alert"
         type="info"
@@ -201,10 +151,19 @@ export function ReliabilityLabPage() {
       )}
       <div className="section-intro">
         <div>
-          <span className="section-kicker">FAULT CATALOG</span>
           <Typography.Title level={2}>五种高价值故障实验</Typography.Title>
+          <Typography.Text type="secondary">点击即可复现 · 同一时间运行一个场景</Typography.Text>
         </div>
-        <Typography.Text type="secondary">点击即可复现 · 同一时间运行一个场景</Typography.Text>
+        <Select
+          className="lab-group-select"
+          value={selectedGroupId}
+          onChange={setGroupId}
+          placeholder="选择一个活跃群组"
+          options={activeGroups.map((group) => ({
+            value: group.id,
+            label: `实验群组 · ${group.id.slice(0, 8)}`,
+          }))}
+        />
       </div>
       <Row gutter={[16, 16]}>
         {scenarios.data?.map((scenario) => {

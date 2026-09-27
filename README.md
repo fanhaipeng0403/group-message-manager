@@ -1,17 +1,3 @@
-# 群消息管理平台（Group Message Manager）
-
-群消息管理平台是一个面向不可靠外部系统的多账号群组消息平台。它能够持久化消息时间线，协调账号与群组状态，并运行一套可审计的工具调用 Agent。即使外部网关出现事件重复、乱序、账号限流、请求超时或连接中断，系统仍然能够恢复、追踪并解释最终结果。
-
-本次笔试实现优先保证可靠性主链路的深度：A 组和 B 组均已形成可运行闭环，C 组保留为明确的选做扩展，没有用空接口或占位页面伪装完成度。
-
-## 这个实现有什么不同
-
-- **故障可以真实复现**：Mock 网关和 Mock Agent 支持确定性故障注入，可以稳定复现 SSE 重复事件、账号限流、结果不确定的 504，以及 Agent 非法响应。
-- **正确性存进数据库，而不是依赖进程记忆**：Inbox 事件编号、Outbox 投递状态、Agent 单群互斥和幂等键均由 PostgreSQL 持久化。
-- **以证据说明完成度**：下方需求矩阵将每项能力对应到可运行的实验或自动化测试。
-- **可靠性实验室**：操作员可以直接从页面注入 S2、S4、S5、S6 故障，并查看数据库中持久化的通过/失败证据，不是前端预设动画。
-- **如实说明范围**：未实现的 C 组选做功能会明确列出，不使用空接口或占位页面伪装完成度。
-
 ## 仓库结构
 
 ```text
@@ -34,30 +20,36 @@ scripts/           可执行的可靠性验收场景
 
 ```bash
 pnpm install
-pnpm infra:up
-pnpm db:migrate
-pnpm dev
+make up
 ```
 
-浏览器访问 <http://localhost:5173>，使用以下演示账号登录：
+`make up` 按顺序执行：
+
+```bash
+pnpm infra:up      # 启动 PostgreSQL（localhost:55432）
+pnpm db:migrate    # 执行数据库迁移
+pnpm dev           # 同时启动 API、Web、Mock 网关、Mock Agent
+```
+
+需要单独跑某一步时，用 `make infra-up`、`make db-migrate` 或 `make dev`。
+
+启动后可访问：
+
+| 服务          | 地址                       |
+| ------------- | -------------------------- |
+| Web 控制台    | http://localhost:5173      |
+| API / Swagger | http://localhost:3000/docs |
+| Mock 消息网关 | http://localhost:4001      |
+| Mock Agent    | http://localhost:4002      |
+
+机器可读的 OpenAPI JSON：<http://localhost:3000/docs/json>
+
+使用以下演示账号登录 Web 控制台：
 
 - `admin / admin`：管理员，可读写
 - `viewer / viewer`：观察员，只读；页面隐藏写操作，直接调用写接口也会返回 `403`
 
-Swagger/OpenAPI 交互式文档：<http://localhost:3000/docs>  
-机器可读的 OpenAPI JSON：<http://localhost:3000/docs/json>
-
 接口参数校验、TypeScript 类型推导和 API 文档来自同一份 Zod 路由 Schema，避免代码与文档逐渐不一致。
-
-默认端口：
-
-| 服务          |  端口 |
-| ------------- | ----: |
-| API           |  3000 |
-| Web           |  5173 |
-| Mock 消息网关 |  4001 |
-| Mock Agent    |  4002 |
-| PostgreSQL    | 55432 |
 
 可配置环境变量包括 `PORT`、`DATABASE_URL`、`GATEWAY_URL`、`AGENT_URL`、`JWT_SECRET`、`WEB_ORIGIN` 和 `DEMO_MODE`，具体示例见 `.env.example`。在笔试演示环境之外应设置 `DEMO_MODE=false`，关闭故障注入接口。
 
@@ -121,7 +113,6 @@ pnpm account-concurrency:verify # 验证并发连接/断开后数据库与网关
 - [可靠性约束](docs/reliability-invariants.md)
 - [ADR 001：轻量级 Monorepo](docs/adr/001-lightweight-monorepo.md)
 - [ADR 002：使用 PostgreSQL 进行协调](docs/adr/002-postgres-coordination.md)
-- [面试演示指引](docs/interview-guide.md)
 
 ## 常用命令
 
@@ -137,8 +128,4 @@ pnpm db:migrate  # 执行尚未应用的数据库迁移
 
 - `pre-commit`：通过 `lint-staged` 对暂存的代码执行 ESLint 自动修复和 Prettier 格式化。
 - `pre-push`：执行完整的 `pnpm lint && pnpm test`，避免已知问题被推送。
-- GitHub Actions：每次推送到 `main` 或创建 Pull Request 时执行 Lint、单测和生产构建，并启动 PostgreSQL、API 与 Mock 服务跑 `smoke`、可靠性实验室、S7/S8 全栈场景。本地 Hook 可以跳过，CI 才是最终门禁。
-
-## 如果继续开发
-
-下一阶段会优先增加针对 Worker 精确崩溃点的 PostgreSQL 集成测试、批量且按账号公平的任务领取，以及 Playwright 端到端测试，然后再考虑 C1 媒体本地化与 C2 真实 LLM 适配服务。当前 Worker 每轮有意只领取一项工作，以换取笔试规模下更容易解释和验证的失败边界；生产吞吐扩大时再改成有界批量。C 组属于题目明确标注的选做增强项，不影响当前 A/B 主链路。
+- GitHub Actions：每次推送到 `main` 或创建 Pull Request 时执行 Lint、单测和生产构建，并启动 PostgreSQL、API 与 Mock 服务跑 `smoke`、场景测试、S7/S8 全栈场景。本地 Hook 可以跳过，CI 才是最终门禁。

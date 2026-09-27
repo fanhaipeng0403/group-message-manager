@@ -1,5 +1,4 @@
 import { Button, Layout, Space, Tag } from "antd";
-import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { API_URL, clearToken, client, currentRole } from "../api/client";
 
@@ -7,12 +6,6 @@ export function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const role = currentRole();
-  const health = useQuery({
-    queryKey: ["health"],
-    queryFn: client.health,
-    retry: false,
-    refetchInterval: 30_000,
-  });
   const active = location.pathname.startsWith("/reliability-lab")
     ? "lab"
     : location.pathname.startsWith("/sequences")
@@ -28,7 +21,6 @@ export function AppShell() {
             </span>
             <span>
               <b>群消息管理</b>
-              <small>CONTROL PLANE</small>
             </span>
           </Link>
           <nav className="main-nav" aria-label="主导航">
@@ -36,7 +28,7 @@ export function AppShell() {
               运行总览
             </Link>
             <Link to="/reliability-lab" className={active === "lab" ? "active" : ""}>
-              可靠性实验室
+              场景测试
             </Link>
             <Link to="/sequences" className={active === "sequences" ? "active" : ""}>
               定时序列
@@ -46,9 +38,6 @@ export function AppShell() {
             </a>
           </nav>
           <Space className="topbar-actions" size={12}>
-            <span className={`system-live ${health.isError ? "degraded" : ""}`}>
-              <i /> {health.isSuccess ? "CONTROL LIVE" : health.isError ? "DEGRADED" : "CHECKING"}
-            </span>
             <Tag className="role-tag" color={role === "admin" ? "blue" : "default"}>
               {role}
             </Tag>

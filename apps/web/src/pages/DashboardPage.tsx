@@ -69,62 +69,6 @@ export function DashboardPage() {
   const activeAgents = groups.data?.filter((g) => g.activeAgentRunId).length ?? 0;
   return (
     <>
-      <section className="hero-panel">
-        <div className="hero-copy">
-          <div className="eyebrow">
-            <span /> RELIABLE MESSAGE & AGENT INFRASTRUCTURE
-          </div>
-          <Typography.Title>
-            把不可靠的外部系统，
-            <br />
-            <em>变成确定性的业务能力。</em>
-          </Typography.Title>
-          <Typography.Paragraph>
-            群消息管理平台为多账号群消息提供持久化编排层。即使网关重复、超时、限流，Agent
-            返回异常，业务仍然可恢复、可审计、可解释。
-          </Typography.Paragraph>
-          <Space size={12} wrap>
-            {admin && (
-              <Button type="primary" size="large" onClick={() => setOpen(true)}>
-                创建编排群组 <span>→</span>
-              </Button>
-            )}
-            <Link className="hero-secondary" to="/reliability-lab">
-              运行故障实验
-            </Link>
-          </Space>
-        </div>
-        <div className="hero-system-card">
-          <div className="system-card-top">
-            <span>CONTROL PLANE POSTURE</span>
-            <b className={health.isError ? "degraded" : undefined}>
-              <i /> {health.isSuccess ? "HEALTHY" : health.isError ? "DEGRADED" : "CHECKING"}
-            </b>
-          </div>
-          <div className="system-orbit">
-            <div className="orbit-ring ring-one" />
-            <div className="orbit-ring ring-two" />
-            <div className="orbit-core">
-              <span>R</span>
-              <small>DURABLE CORE</small>
-            </div>
-            <div className="orbit-node node-gateway">GATEWAY</div>
-            <div className="orbit-node node-agent">AGENT</div>
-            <div className="orbit-node node-ops">OPS</div>
-          </div>
-          <div className="posture-list">
-            <span>
-              <i /> Persistent inbox / outbox
-            </span>
-            <span>
-              <i /> Audited tool execution
-            </span>
-            <span>
-              <i /> Restart-safe workers
-            </span>
-          </div>
-        </div>
-      </section>
       {!admin && (
         <Alert className="viewer-alert" type="info" showIcon message="当前为只读查看者，写操作已隐藏。" />
       )}
@@ -308,6 +252,13 @@ export function DashboardPage() {
           </div>
         }
         className="section-card premium-card"
+        extra={
+          admin ? (
+            <Button type="primary" onClick={() => setOpen(true)}>
+              创建群组
+            </Button>
+          ) : null
+        }
       >
         <Table
           rowKey="id"

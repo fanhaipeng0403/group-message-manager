@@ -1,20 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  Alert,
-  Button,
-  Card,
-  Form,
-  Input,
-  Modal,
-  Progress,
-  Select,
-  Space,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from "antd";
+import { Alert, Button, Card, Form, Input, Modal, Progress, Select, Space, Table, Tag, message } from "antd";
 import { ApiError, client, currentRole, type Sequence } from "../api/client";
 import { StatusTag } from "../components/StatusTag";
 
@@ -98,21 +84,6 @@ export function SequencePage() {
 
   return (
     <>
-      <section className="lab-hero sequence-hero">
-        <div>
-          <div className="eyebrow">
-            <span /> DURABLE SEQUENCE ORCHESTRATION
-          </div>
-          <Typography.Title>
-            把运营话术，
-            <br />
-            <em>变成可恢复的时间流程。</em>
-          </Typography.Title>
-          <Typography.Paragraph>
-            每一步都经过变量预检、角色选取和持久化排期。服务重启、账号限流或缺少角色时，运行状态仍然可解释。
-          </Typography.Paragraph>
-        </div>
-      </section>
       {!admin && (
         <Alert className="viewer-alert" type="info" showIcon message="当前为只读查看者，不能启动序列。" />
       )}
