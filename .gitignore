@@ -4,6 +4,7 @@ dist/
 .DS_Store
 .idea/
 coverage/
+.playwright-cli/
 media/
 *.log
 *.tsbuildinfo

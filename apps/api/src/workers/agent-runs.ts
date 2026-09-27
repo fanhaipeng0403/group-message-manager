@@ -88,6 +88,10 @@ export function serializeToolResult(body: Record<string, unknown>, maxBytes = 8 
   return result;
 }
 
+export function nextProtocolErrorCount(current: number, validResponse: boolean): number {
+  return validResponse ? 0 : current + 1;
+}
+
 export function classifyAgentDelivery(input: {
   clientMsgId: string;
   deliveryStatus: string;
@@ -353,8 +357,8 @@ export class AgentRunWorker {
         text: string;
         sent_at: Date;
       }>(
-        `SELECT msg_id, sender_platform_user_id, is_own, text, sent_at FROM messages
-         WHERE group_id = $1 AND msg_id IS NOT NULL ORDER BY sent_at DESC, id DESC LIMIT $2`,
+        `SELECT COALESCE(msg_id, client_msg_id) AS msg_id, sender_platform_user_id, is_own, text, sent_at
+         FROM messages WHERE group_id = $1 ORDER BY sent_at DESC, id DESC LIMIT $2`,
         [run.group_id, limit],
       );
       let truncated = false;
@@ -639,6 +643,7 @@ export class AgentRunWorker {
         ],
       };
       const nextConversation = [...run.conversation, assistant, toolResult];
+      const protocolCount = nextProtocolErrorCount(run.consecutive_protocol_errors, true);
       await client.query(
         `INSERT INTO agent_steps
          (run_id, step_index, kind, tool_use_id, name, input, result_summary, is_error, error_code, audit_verdict, raw_response)
@@ -660,8 +665,8 @@ export class AgentRunWorker {
         await client.query(
           `UPDATE agent_runs SET status = 'blocked', end_reason = 'audit_blocked', conversation = $2,
              step_count = step_count + 1, active_elapsed_ms = active_elapsed_ms + $3,
-             lease_until = NULL, updated_at = now() WHERE id = $1`,
-          [run.id, JSON.stringify(nextConversation), elapsed],
+             consecutive_protocol_errors = $4, lease_until = NULL, updated_at = now() WHERE id = $1`,
+          [run.id, JSON.stringify(nextConversation), elapsed, protocolCount],
         );
         event = await this.events.store(
           "agent_run",
@@ -671,8 +676,9 @@ export class AgentRunWorker {
       } else if (result.finish) {
         await client.query(
           `UPDATE agent_runs SET status = 'finished', end_reason = 'final', summary = $2, conversation = $3,
-             step_count = step_count + 1, active_elapsed_ms = active_elapsed_ms + $4, lease_until = NULL, updated_at = now() WHERE id = $1`,
-          [run.id, result.finish, JSON.stringify(nextConversation), elapsed],
+             step_count = step_count + 1, active_elapsed_ms = active_elapsed_ms + $4,
+             consecutive_protocol_errors = $5, lease_until = NULL, updated_at = now() WHERE id = $1`,
+          [run.id, result.finish, JSON.stringify(nextConversation), elapsed, protocolCount],
         );
         event = await this.events.store(
           "agent_run",
@@ -680,29 +686,13 @@ export class AgentRunWorker {
           client,
         );
       } else {
-        const protocolResult = result.errorCode === "UNKNOWN_TOOL" || result.errorCode === "INVALID_INPUT";
-        const protocolCount = protocolResult ? run.consecutive_protocol_errors + 1 : 0;
-        const protocolFailed = protocolCount >= 3;
         await client.query(
           `UPDATE agent_runs SET conversation = $2, step_count = step_count + 1,
              active_elapsed_ms = active_elapsed_ms + $3, lease_until = NULL,
              consecutive_protocol_errors = $4,
-             status = CASE WHEN $5 THEN 'failed' ELSE status END,
-             end_reason = CASE WHEN $5 THEN 'protocol_errors' ELSE end_reason END,
              updated_at = now() WHERE id = $1`,
-          [run.id, JSON.stringify(nextConversation), elapsed, protocolCount, protocolFailed],
+          [run.id, JSON.stringify(nextConversation), elapsed, protocolCount],
         );
-        if (protocolFailed)
-          event = await this.events.store(
-            "agent_run",
-            {
-              runId: run.id,
-              groupId: run.group_id,
-              status: "failed",
-              endReason: "protocol_errors",
-            },
-            client,
-          );
       }
       await client.query("COMMIT");
     } catch (error) {
@@ -715,7 +705,7 @@ export class AgentRunWorker {
   }
 
   private async protocolError(run: RunRow, code: string, raw: string, elapsed: number): Promise<void> {
-    const count = run.consecutive_protocol_errors + 1;
+    const count = nextProtocolErrorCount(run.consecutive_protocol_errors, false);
     const step = run.step_count + 1;
     const shouldEnd = count >= 3 || step >= 12;
     const conversation = [
@@ -754,8 +744,9 @@ export class AgentRunWorker {
     );
     await this.pool.query(
       `UPDATE agent_runs SET status = 'finished', end_reason = 'final', summary = $2, step_count = step_count + 1,
-       active_elapsed_ms = active_elapsed_ms + $3, lease_until = NULL, updated_at = now() WHERE id = $1`,
-      [run.id, summary, elapsed],
+       active_elapsed_ms = active_elapsed_ms + $3, consecutive_protocol_errors = $4,
+       lease_until = NULL, updated_at = now() WHERE id = $1`,
+      [run.id, summary, elapsed, nextProtocolErrorCount(run.consecutive_protocol_errors, true)],
     );
     await this.events.emit("agent_run", {
       runId: run.id,

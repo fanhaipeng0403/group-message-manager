@@ -42,4 +42,4 @@ The experiment intentionally returns malformed JSON, then an unknown tool, then 
 
 ## Honest scope
 
-The implementation goes deep on A0–A6 core reliability and intentionally leaves broad B/C work visible as future work. If more time were available, the next sequence would be B3 refresh-token rotation, B4 persisted WebSocket replay cursor and B1 scheduled sequences.
+The implementation completes the A-group core and the selected B-group extensions documented in the README: scheduled sequences, group lifecycle recovery, rotating refresh sessions, and persisted WebSocket replay. The intentionally omitted scope is C1 media localization, C2 a real LLM adapter, and C3 Playwright E2E coverage. If more time were available, the next engineering step would be deeper PostgreSQL crash-point integration coverage and batched, per-account-fair worker claiming—not placeholder C-group endpoints.

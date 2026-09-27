@@ -316,10 +316,11 @@ async function collectEvidence(
   );
   const runId = trigger.rows[0]?.consumed_run_id;
   if (!runId) return { passed: false, phase: "waiting_for_agent_trigger" };
-  const run = await pool.query<{ status: string; end_reason: string | null }>(
-    "SELECT status, end_reason FROM agent_runs WHERE id = $1",
-    [runId],
-  );
+  const run = await pool.query<{
+    status: string;
+    end_reason: string | null;
+    consecutive_protocol_errors: number;
+  }>("SELECT status, end_reason, consecutive_protocol_errors FROM agent_runs WHERE id = $1", [runId]);
   const steps = await pool.query<{
     kind: string;
     name: string | null;
@@ -411,7 +412,12 @@ async function collectEvidence(
       ...base,
       badJsonRecorded,
       unknownToolRecorded,
-      passed: run.rows[0]?.status === "finished" && badJsonRecorded && unknownToolRecorded,
+      consecutiveProtocolErrors: run.rows[0]?.consecutive_protocol_errors ?? null,
+      passed:
+        run.rows[0]?.status === "finished" &&
+        badJsonRecorded &&
+        unknownToolRecorded &&
+        run.rows[0]?.consecutive_protocol_errors === 0,
     };
   }
 

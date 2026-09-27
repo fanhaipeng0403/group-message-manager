@@ -102,7 +102,7 @@ pnpm account-concurrency:verify # 验证并发连接/断开后数据库与网关
 | A2 持久化消息发送生命周期           | 已完成         | `outbox-compensation.test.ts` 以及 `smoke`、`s4`、`s5` 真实场景       |
 | A2 入站事件去重与己方消息合并       | 已完成         | 数据库唯一约束与 `s2`、`s3` 场景                                      |
 | A2 SSE 根据持久化游标重连           | 已完成         | 只推进连续事件水位；有编号缺口时保留后续事件并持续补洞                |
-| A3 异步建群                         | A 组要求已完成 | 持久化 Job、等待成员加入事件、提升管理员                              |
+| A3 异步建群                         | A 组要求已完成 | 持久化 Job、等待成员加入事件、提升管理员及前端任务状态展示            |
 | A4 稳定游标消息时间线               | 已完成         | 使用 `(sent_at, id)` Keyset Cursor，加载更早消息不漂移                |
 | A4 带鉴权和单调序号的 WebSocket     | 已完成         | 持久化 `ws_events`，补发期间先缓冲实时事件，再按单调序号无缝切换      |
 | A5 每个群同时只运行一个 Agent       | 已完成         | PostgreSQL 部分唯一索引                                               |
@@ -110,9 +110,9 @@ pnpm account-concurrency:verify # 验证并发连接/断开后数据库与网关
 | A5 Agent 发消息幂等                 | 已完成         | 唯一 `(run_id, idempotency_key)` 映射                                 |
 | A6 页面 1～3                        | 已完成         | 登录、账号列表、群组时间线、成员列表、Agent 运行列表                  |
 | B1 定时消息序列                     | 已完成         | 持久化排期 Worker、变量来源预检、单群唯一索引、S7/S8 验证脚本与页面 5 |
-| B2 邀请过期与全员退群扩展           | 已完成         | 邀请未就绪/过期重试、`ALREADY_MEMBER` 对账、群主最后退出              |
+| B2 邀请过期与全员退群扩展           | 已完成         | 邀请未就绪/过期重试、`ALREADY_MEMBER` 对账、群主最后退出及控制台入口  |
 | B3 Refresh Token 轮换               | 已完成         | HttpOnly Cookie、单次轮换、重放撤销整条会话、Logout 立即失效          |
-| B4 前端断线游标与独立运行详情页     | 已完成         | 服务端 `sinceSeq` 补发、客户端游标去重、Agent 步骤详情抽屉            |
+| B4 前端断线游标与独立运行详情页     | 已完成         | `sinceSeq` 补发、WS 认证续期、客户端游标去重、Agent 步骤详情抽屉      |
 | C1～C3                              | 未实现         | 按题目要求作为选做项，当前不占用核心实现时间                          |
 
 ## 设计文档
@@ -137,8 +137,8 @@ pnpm db:migrate  # 执行尚未应用的数据库迁移
 
 - `pre-commit`：通过 `lint-staged` 对暂存的代码执行 ESLint 自动修复和 Prettier 格式化。
 - `pre-push`：执行完整的 `pnpm lint && pnpm test`，避免已知问题被推送。
-- GitHub Actions：每次推送到 `main` 或创建 Pull Request 时重新执行安装、Lint、测试和生产构建。本地 Hook 可以跳过，CI 才是最终门禁。
+- GitHub Actions：每次推送到 `main` 或创建 Pull Request 时执行 Lint、单测和生产构建，并启动 PostgreSQL、API 与 Mock 服务跑 `smoke`、可靠性实验室、S7/S8 全栈场景。本地 Hook 可以跳过，CI 才是最终门禁。
 
 ## 如果继续开发
 
-下一阶段会优先增加针对 Worker 崩溃点的 PostgreSQL 集成测试和 Playwright 端到端测试，然后再考虑 C1 媒体本地化与 C2 真实 LLM 适配服务。C 组属于题目明确标注的选做增强项，不影响当前 A/B 主链路。
+下一阶段会优先增加针对 Worker 精确崩溃点的 PostgreSQL 集成测试、批量且按账号公平的任务领取，以及 Playwright 端到端测试，然后再考虑 C1 媒体本地化与 C2 真实 LLM 适配服务。当前 Worker 每轮有意只领取一项工作，以换取笔试规模下更容易解释和验证的失败边界；生产吞吐扩大时再改成有界批量。C 组属于题目明确标注的选做增强项，不影响当前 A/B 主链路。

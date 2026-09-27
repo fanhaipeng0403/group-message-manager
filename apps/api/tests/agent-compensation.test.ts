@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { classifyAgentDelivery, serializeToolResult } from "../src/workers/agent-runs.js";
+import {
+  classifyAgentDelivery,
+  nextProtocolErrorCount,
+  serializeToolResult,
+} from "../src/workers/agent-runs.js";
 
 describe("Agent tool compensation", () => {
   it("maps terminal-account delivery cancellation to SEND_FAILED", () => {
@@ -39,5 +43,11 @@ describe("Agent tool compensation", () => {
     const content = serializeToolResult({ value: "中".repeat(10_000) });
     expect(Buffer.byteLength(content, "utf8")).toBeLessThanOrEqual(8 * 1024);
     expect(JSON.parse(content)).toMatchObject({ truncated: true });
+  });
+
+  it("resets the protocol-error streak after any schema-valid Agent response", () => {
+    expect(nextProtocolErrorCount(1, true)).toBe(0);
+    expect(nextProtocolErrorCount(2, true)).toBe(0);
+    expect(nextProtocolErrorCount(1, false)).toBe(2);
   });
 });

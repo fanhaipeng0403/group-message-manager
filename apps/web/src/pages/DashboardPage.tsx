@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Col, Form, Modal, Row, Select, Space, Table, Typography, message } from "antd";
 import { Link } from "react-router-dom";
@@ -8,17 +8,34 @@ import { StatusTag } from "../components/StatusTag";
 export function DashboardPage() {
   const queryClient = useQueryClient();
   const admin = currentRole() === "admin";
-  const accounts = useQuery({ queryKey: ["accounts"], queryFn: client.accounts });
-  const groups = useQuery({ queryKey: ["groups"], queryFn: client.groups, refetchInterval: 2_000 });
+  const health = useQuery({
+    queryKey: ["health"],
+    queryFn: client.health,
+    retry: false,
+    refetchInterval: 30_000,
+  });
+  const accounts = useQuery({
+    queryKey: ["accounts"],
+    queryFn: client.accounts,
+    refetchInterval: 30_000,
+  });
+  const groups = useQuery({ queryKey: ["groups"], queryFn: client.groups, refetchInterval: 30_000 });
   const [open, setOpen] = useState(false);
+  const [jobId, setJobId] = useState<string>();
+  const job = useQuery({
+    queryKey: ["job", jobId],
+    queryFn: () => client.job(jobId!),
+    enabled: Boolean(jobId),
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 500 : false),
+  });
   const online = useMemo(
     () => accounts.data?.filter((item) => item.status === "online") ?? [],
     [accounts.data],
   );
-  const refresh = () => {
+  const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["accounts"] });
     void queryClient.invalidateQueries({ queryKey: ["groups"] });
-  };
+  }, [queryClient]);
   const connect = useMutation({
     mutationFn: client.connectAccount,
     onSuccess: refresh,
@@ -38,13 +55,16 @@ export function DashboardPage() {
       creatorAccountId: string;
       memberAccountIds: string[];
     }) => client.createGroup(creatorAccountId, memberAccountIds),
-    onSuccess: () => {
+    onSuccess: ({ jobId: createdJobId }) => {
+      setJobId(createdJobId);
       setOpen(false);
-      refresh();
       void message.success("建群任务已经提交");
     },
     onError: (e: Error) => void message.error(e.message),
   });
+  useEffect(() => {
+    if (job.data?.status === "finished") refresh();
+  }, [job.data?.status, refresh]);
   const activeGroups = groups.data?.filter((g) => g.status === "active").length ?? 0;
   const activeAgents = groups.data?.filter((g) => g.activeAgentRunId).length ?? 0;
   return (
@@ -76,9 +96,9 @@ export function DashboardPage() {
         </div>
         <div className="hero-system-card">
           <div className="system-card-top">
-            <span>PLATFORM POSTURE</span>
-            <b>
-              <i /> HEALTHY
+            <span>CONTROL PLANE POSTURE</span>
+            <b className={health.isError ? "degraded" : undefined}>
+              <i /> {health.isSuccess ? "HEALTHY" : health.isError ? "DEGRADED" : "CHECKING"}
             </b>
           </div>
           <div className="system-orbit">
@@ -113,8 +133,35 @@ export function DashboardPage() {
           <span className="section-kicker">REAL-TIME OPERATIONS</span>
           <Typography.Title level={2}>基础设施运行态势</Typography.Title>
         </div>
-        <Typography.Text type="secondary">所有状态均来自实时系统，不是演示数据</Typography.Text>
+        <Typography.Text type="secondary">
+          {health.isSuccess
+            ? `控制面健康 · Schema v${health.data.schemaVersion}`
+            : health.isError
+              ? "控制面健康检查失败"
+              : "正在检查控制面状态"}
+        </Typography.Text>
       </div>
+      {jobId && job.data && (
+        <Alert
+          className="viewer-alert"
+          showIcon
+          type={job.data.status === "failed" ? "error" : job.data.status === "finished" ? "success" : "info"}
+          message={
+            job.data.status === "running"
+              ? "建群任务执行中"
+              : job.data.status === "finished"
+                ? "建群任务已完成"
+                : "建群任务失败"
+          }
+          description={
+            job.data.errors.length
+              ? job.data.errors.map((error) => `${error.step}: ${error.code}`).join("；")
+              : `Job ${jobId.slice(0, 8)}`
+          }
+          closable
+          onClose={() => setJobId(undefined)}
+        />
+      )}
       <Row gutter={[16, 16]} className="metric-row">
         <Col xs={24} md={8}>
           <Card className="metric-card metric-blue">
@@ -216,14 +263,22 @@ export function DashboardPage() {
             { title: "平台身份", dataIndex: "platformUserId", render: (value) => value ?? "尚未连接" },
             { title: "状态", dataIndex: "status", render: (value) => <StatusTag value={value} /> },
             {
+              title: "限流恢复",
+              dataIndex: "rateLimitedUntil",
+              render: (value) => <RateLimitCountdown value={value} />,
+            },
+            {
               title: "操作",
               render: (_, record) =>
                 admin ? (
                   <Space>
-                    {["idle", "disconnected"].includes(record.status) && (
+                    {record.status === "idle" && (
                       <Button onClick={() => connect.mutate(record.id)}>连接</Button>
                     )}
-                    {record.status === "online" && (
+                    {record.status === "disconnected" && (
+                      <Button onClick={() => connect.mutate(record.id)}>重连</Button>
+                    )}
+                    {["online", "rate_limited"].includes(record.status) && (
                       <Button
                         onClick={() =>
                           transition.mutate({ id: record.id, from: record.status, to: "disconnected" })
@@ -232,7 +287,7 @@ export function DashboardPage() {
                         标记离线
                       </Button>
                     )}
-                    {record.status === "disconnected" && (
+                    {["online", "disconnected"].includes(record.status) && (
                       <Button
                         onClick={() => transition.mutate({ id: record.id, from: record.status, to: "idle" })}
                       >
@@ -307,4 +362,9 @@ export function DashboardPage() {
       </Modal>
     </>
   );
+}
+
+function RateLimitCountdown({ value }: { value: string | null }) {
+  if (!value) return <>—</>;
+  return <Typography.Text type="warning">{new Date(value).toLocaleTimeString()}</Typography.Text>;
 }

@@ -149,6 +149,13 @@ a {
   letter-spacing: 0.08em;
   white-space: nowrap;
 }
+.system-live.degraded {
+  color: #d92d20;
+}
+.system-live.degraded i {
+  background: #f04438;
+  box-shadow: 0 0 0 4px rgba(240, 68, 56, 0.1);
+}
 .system-live i,
 .eyebrow span,
 .metric-dot,
@@ -299,6 +306,13 @@ a {
 .system-card-top b {
   color: #6ce9a6;
 }
+.system-card-top b.degraded {
+  color: #fda29b;
+}
+.system-card-top b.degraded i {
+  background: #f04438;
+  box-shadow: 0 0 10px #f04438;
+}
 .system-card-top b i {
   display: inline-block;
   width: 6px;
@@ -401,6 +415,13 @@ a {
 .viewer-alert {
   margin: 18px 0;
   border-radius: 12px;
+}
+.blocked-run-alert {
+  margin-bottom: 14px;
+}
+.policy-controls .leave-all-button {
+  align-self: center;
+  margin: 8px;
 }
 .section-intro {
   display: flex;

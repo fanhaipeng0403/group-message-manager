@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -12,6 +12,7 @@ import {
   Form,
   Input,
   List,
+  Popconfirm,
   Row,
   Select,
   Space,
@@ -30,26 +31,38 @@ export function GroupPage() {
   const queryClient = useQueryClient();
   const admin = currentRole() === "admin";
   const [selectedRun, setSelectedRun] = useState<string>();
-  const group = useQuery({ queryKey: ["group", id], queryFn: () => client.group(id), enabled: Boolean(id) });
+  const [leaveJobId, setLeaveJobId] = useState<string>();
+  const group = useQuery({
+    queryKey: ["group", id],
+    queryFn: () => client.group(id),
+    enabled: Boolean(id),
+    refetchInterval: 30_000,
+  });
   const messages = useInfiniteQuery({
     queryKey: ["messages", id],
     queryFn: ({ pageParam }) => client.messages(id, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: Boolean(id),
-    refetchInterval: 2_000,
+    refetchInterval: 30_000,
   });
   const runs = useQuery({
     queryKey: ["agent-runs", id],
     queryFn: () => client.agentRuns(id),
     enabled: Boolean(id),
-    refetchInterval: 2_000,
+    refetchInterval: 30_000,
   });
   const run = useQuery({
     queryKey: ["agent-run", selectedRun],
     queryFn: () => client.agentRun(selectedRun!),
     enabled: Boolean(selectedRun),
-    refetchInterval: (query) => (query.state.data?.status === "running" ? 1_000 : false),
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 30_000 : false),
+  });
+  const leaveJob = useQuery({
+    queryKey: ["job", leaveJobId],
+    queryFn: () => client.job(leaveJobId!),
+    enabled: Boolean(leaveJobId),
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 500 : false),
   });
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["group", id] });
@@ -69,6 +82,20 @@ export function GroupPage() {
     },
     onError: (e: Error) => void message.error(e.message),
   });
+  const leaveAll = useMutation({
+    mutationFn: () => client.leaveAll(id),
+    onSuccess: ({ jobId }) => {
+      setLeaveJobId(jobId);
+      void message.success("全员退群任务已经提交");
+    },
+    onError: (e: Error) => void message.error(e.message),
+  });
+  useEffect(() => {
+    if (leaveJob.data?.status === "finished") {
+      void queryClient.invalidateQueries({ queryKey: ["group", id] });
+      void queryClient.invalidateQueries({ queryKey: ["groups"] });
+    }
+  }, [id, leaveJob.data?.status, queryClient]);
   if (group.isError) return <Alert type="error" message={(group.error as Error).message} />;
   const data = group.data;
   const messageItems = Array.from(
@@ -121,9 +148,49 @@ export function GroupPage() {
                 onChange={(autoKickEnabled) => patch.mutate({ autoKickEnabled })}
               />
             </div>
+            {data.status === "active" && (
+              <Popconfirm
+                title="确认让全部服务账号退出该群？"
+                description="系统会保证群主最后退出。"
+                okText="确认退群"
+                cancelText="取消"
+                onConfirm={() => leaveAll.mutate()}
+              >
+                <Button className="leave-all-button" danger loading={leaveAll.isPending}>
+                  全员退群
+                </Button>
+              </Popconfirm>
+            )}
           </div>
         )}
       </section>
+      {leaveJobId && leaveJob.data && (
+        <Alert
+          className="viewer-alert"
+          showIcon
+          closable
+          onClose={() => setLeaveJobId(undefined)}
+          type={
+            leaveJob.data.status === "failed"
+              ? "error"
+              : leaveJob.data.status === "finished"
+                ? "success"
+                : "info"
+          }
+          message={
+            leaveJob.data.status === "running"
+              ? "全员退群任务执行中"
+              : leaveJob.data.status === "finished"
+                ? "全员退群已完成"
+                : "全员退群任务失败"
+          }
+          description={
+            leaveJob.data.errors.length
+              ? leaveJob.data.errors.map((error) => `${error.step}: ${error.code}`).join("；")
+              : `Job ${leaveJobId.slice(0, 8)}`
+          }
+        />
+      )}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={16}>
           <Card
@@ -229,6 +296,15 @@ export function GroupPage() {
             }
             className="section-card premium-card"
           >
+            {runs.data?.some((item) => item.status === "blocked") && (
+              <Alert
+                className="blocked-run-alert"
+                type="error"
+                showIcon
+                message="存在被审计阻断的 Agent Run"
+                description="请打开对应运行查看审计结果和原始步骤。"
+              />
+            )}
             <List
               dataSource={runs.data ?? []}
               locale={{ emptyText: data?.agentEnabled ? "等待外部消息触发" : "Agent 未启用" }}

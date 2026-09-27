@@ -38,7 +38,7 @@ export function currentRole(): "admin" | "viewer" | null {
   }
 }
 
-async function refreshAccessToken(): Promise<string> {
+export async function refreshAccessToken(): Promise<string> {
   if (!refreshPromise) {
     refreshPromise = fetch(`${API_URL}/api/auth/refresh`, { method: "POST", credentials: "include" })
       .then(async (response) => {
@@ -52,6 +52,11 @@ async function refreshAccessToken(): Promise<string> {
       });
   }
   return refreshPromise;
+}
+
+export function expireSession(): void {
+  clearToken();
+  if (window.location.pathname !== "/login") window.location.assign("/login");
 }
 
 export async function api<T>(path: string, init: RequestInit = {}, allowRefresh = true): Promise<T> {
@@ -73,8 +78,7 @@ export async function api<T>(path: string, init: RequestInit = {}, allowRefresh 
       await refreshAccessToken();
       response = await request();
     } catch {
-      clearToken();
-      if (window.location.pathname !== "/login") window.location.assign("/login");
+      expireSession();
     }
   }
   if (!response.ok) {
@@ -82,8 +86,7 @@ export async function api<T>(path: string, init: RequestInit = {}, allowRefresh 
       error: { code: `HTTP_${response.status}`, message: response.statusText, requestId: "unknown" },
     }))) as ApiErrorBody;
     if (response.status === 401) {
-      clearToken();
-      if (window.location.pathname !== "/login") window.location.assign("/login");
+      expireSession();
     }
     throw new ApiError(response.status, body);
   }
@@ -91,6 +94,7 @@ export async function api<T>(path: string, init: RequestInit = {}, allowRefresh 
 }
 
 export const client = {
+  health: () => api<{ ok: true; schemaVersion: number }>("/api/health", {}, false),
   login: (username: string, password: string) =>
     api<{ accessToken: string }>("/api/auth/login", {
       method: "POST",
@@ -108,6 +112,8 @@ export const client = {
       method: "POST",
       body: JSON.stringify({ creatorAccountId, memberAccountIds }),
     }),
+  leaveAll: (id: string) => api<{ jobId: string }>(`/api/groups/${id}/leave-all`, { method: "POST" }),
+  job: (id: string) => api<Job>(`/api/jobs/${id}`),
   messages: (id: string, before?: string) =>
     api<{ items: Message[]; nextCursor: string | null }>(
       `/api/groups/${id}/messages${before ? `?before=${encodeURIComponent(before)}` : ""}`,
@@ -153,6 +159,10 @@ export interface AgentRun {
   status: string;
   endReason: string | null;
   summary: string | null;
+}
+export interface Job {
+  status: "running" | "finished" | "failed";
+  errors: Array<{ code: string; step: string }>;
 }
 export interface AgentStep {
   kind: string;

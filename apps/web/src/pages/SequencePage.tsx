@@ -55,7 +55,7 @@ function preview(
 
 export function SequencePage() {
   const admin = currentRole() === "admin";
-  const groups = useQuery({ queryKey: ["groups"], queryFn: client.groups, refetchInterval: 2_000 });
+  const groups = useQuery({ queryKey: ["groups"], queryFn: client.groups, refetchInterval: 30_000 });
   const sequences = useQuery({ queryKey: ["sequences"], queryFn: client.sequences });
   const [groupId, setGroupId] = useState<string>();
   const [runId, setRunId] = useState<string>();
@@ -76,7 +76,7 @@ export function SequencePage() {
     queryKey: ["sequence-run", selectedRunId],
     queryFn: () => client.sequenceRun(selectedRunId!),
     enabled: Boolean(selectedRunId),
-    refetchInterval: (query) => (query.state.data?.status === "running" ? 800 : false),
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 30_000 : false),
   });
   const start = useMutation({
     mutationFn: () => client.startSequence(selectedGroupId!, pending!),
