@@ -14,10 +14,10 @@ const CreateGroupSchema = z
   })
   .superRefine((value, context) => {
     if (value.memberAccountIds.includes(value.creatorAccountId)) {
-      context.addIssue({ code: "custom", message: "memberAccountIds must not contain creatorAccountId" });
+      context.addIssue({ code: "custom", message: "受邀成员账号不能包含群主账号" });
     }
     if (new Set(value.memberAccountIds).size !== value.memberAccountIds.length) {
-      context.addIssue({ code: "custom", message: "memberAccountIds must be unique" });
+      context.addIssue({ code: "custom", message: "受邀成员账号不能重复" });
     }
   });
 

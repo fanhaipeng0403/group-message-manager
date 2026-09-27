@@ -67,6 +67,12 @@ const ExperimentSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 const StartExperimentResponseSchema = z.object({ experimentId: z.string().uuid() });
+const GroupParamsSchema = z.object({ groupId: z.string().uuid() });
+const InjectInboundSchema = z.object({
+  senderPlatformUserId: z.string().min(1).max(80),
+  text: z.string().min(1).max(2_000),
+});
+const InjectInboundResponseSchema = z.object({ msgId: z.string() });
 
 interface ExperimentRow {
   id: string;
@@ -88,6 +94,59 @@ export function registerDemoRoutes(
   agent: AgentClient,
 ): void {
   const api = app.withTypeProvider<ZodTypeProvider>();
+  api.post(
+    "/api/demo/groups/:groupId/inbound",
+    {
+      preHandler: requireAdmin,
+      schema: {
+        operationId: "injectDemoInboundMessage",
+        tags: ["Demo"],
+        summary: "模拟外部用户向群组发送消息",
+        description: "仅在 DEMO_MODE 下开放；消息仍通过 Mock Gateway SSE 进入正常消息与 Agent 链路。",
+        security: BearerSecurity,
+        params: GroupParamsSchema,
+        body: InjectInboundSchema,
+        response: { 202: InjectInboundResponseSchema, ...ErrorResponses },
+      },
+    },
+    async (request, reply) => {
+      const group = await pool.query<{
+        gateway_group_id: string;
+        status: string;
+        creator_account_id: string;
+      }>("SELECT gateway_group_id, status, creator_account_id FROM groups WHERE id = $1", [
+        request.params.groupId,
+      ]);
+      if (!group.rows[0]) throw new AppError(404, "GROUP_NOT_FOUND", "Group not found");
+      if (group.rows[0].status !== "active")
+        throw new AppError(409, "GROUP_UNREACHABLE", "Only active groups accept demo messages");
+
+      const members = await pool.query<{ account_id: string }>(
+        "SELECT account_id FROM group_members WHERE group_id = $1 AND account_id IS NOT NULL ORDER BY account_id",
+        [request.params.groupId],
+      );
+      const eventCursor = await pool.query<{ next_event_id: string }>(
+        "SELECT (COALESCE(MAX(event_id), 0) + 1)::text AS next_event_id FROM gateway_events",
+      );
+      await gateway.restoreDemoGroup(
+        group.rows[0].gateway_group_id,
+        group.rows[0].creator_account_id,
+        members.rows
+          .map((row) => row.account_id)
+          .filter((accountId) => accountId !== group.rows[0]!.creator_account_id),
+        Number(eventCursor.rows[0]?.next_event_id ?? 1),
+      );
+      await gateway.configureDemo({ duplicateEvents: false, sendMode: "success" });
+      await agent.configureDemo("normal");
+      const result = await gateway.injectInbound(
+        group.rows[0].gateway_group_id,
+        request.body.text,
+        request.body.senderPlatformUserId,
+      );
+      return reply.status(202).send(result);
+    },
+  );
+
   api.get(
     "/api/demo/scenarios",
     {

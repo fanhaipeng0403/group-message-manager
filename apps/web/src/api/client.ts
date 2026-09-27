@@ -125,6 +125,11 @@ export const client = {
     }),
   patchGroup: (id: string, patch: { agentEnabled?: boolean; autoKickEnabled?: boolean }) =>
     api(`/api/groups/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  injectDemoMessage: (id: string, senderPlatformUserId: string, text: string) =>
+    api<{ msgId: string }>(`/api/demo/groups/${id}/inbound`, {
+      method: "POST",
+      body: JSON.stringify({ senderPlatformUserId, text }),
+    }),
   agentRuns: (id: string) => api<AgentRun[]>(`/api/groups/${id}/agent-runs`),
   agentRun: (id: string) => api<AgentRun & { steps: AgentStep[] }>(`/api/agent-runs/${id}`),
   sequences: () => api<Sequence[]>("/api/sequences"),

@@ -1,6 +1,6 @@
 import { Button, Layout, Space, Tag } from "antd";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { API_URL, clearToken, client, currentRole } from "../api/client";
+import { clearToken, client, currentRole } from "../api/client";
 
 export function AppShell() {
   const navigate = useNavigate();
@@ -8,9 +8,9 @@ export function AppShell() {
   const role = currentRole();
   const active = location.pathname.startsWith("/reliability-lab")
     ? "lab"
-    : location.pathname.startsWith("/sequences")
-      ? "sequences"
-      : "overview";
+    : location.pathname.startsWith("/overview")
+      ? "overview"
+      : "conversations";
   return (
     <Layout className="app-shell">
       <header className="topbar">
@@ -20,22 +20,19 @@ export function AppShell() {
               <i />
             </span>
             <span>
-              <b>群消息管理</b>
+              <b>多账号群组消息平台</b>
             </span>
           </Link>
           <nav className="main-nav" aria-label="主导航">
-            <Link to="/" className={active === "overview" ? "active" : ""}>
+            <Link to="/overview" className={active === "overview" ? "active" : ""}>
               运行总览
             </Link>
+            <Link to="/" className={active === "conversations" ? "active" : ""}>
+              群组与会话
+            </Link>
             <Link to="/reliability-lab" className={active === "lab" ? "active" : ""}>
-              场景测试
+              系统验证
             </Link>
-            <Link to="/sequences" className={active === "sequences" ? "active" : ""}>
-              定时序列
-            </Link>
-            <a href={`${API_URL}/docs`} target="_blank" rel="noreferrer">
-              API 文档 <span>↗</span>
-            </a>
           </nav>
           <Space className="topbar-actions" size={12}>
             <Tag className="role-tag" color={role === "admin" ? "blue" : "default"}>

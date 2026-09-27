@@ -23,7 +23,11 @@ import { z } from "zod";
 
 export async function buildApp(env: Env, pool: DbPool, schemaVersion: number) {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
-  await app.register(cors, { origin: env.WEB_ORIGIN, credentials: true });
+  await app.register(cors, {
+    origin: env.WEB_ORIGIN,
+    credentials: true,
+    methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"],
+  });
   await app.register(jwt, { secret: env.JWT_SECRET });
   await app.register(websocket);
   await registerOpenApi(app);

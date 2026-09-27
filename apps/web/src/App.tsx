@@ -11,13 +11,13 @@ function Page({ children }: { children: ReactNode }) {
 const DashboardPage = lazy(() =>
   import("./pages/DashboardPage").then((module) => ({ default: module.DashboardPage })),
 );
+const ConversationHomePage = lazy(() =>
+  import("./pages/ConversationHomePage").then((module) => ({ default: module.ConversationHomePage })),
+);
 const GroupPage = lazy(() => import("./pages/GroupPage").then((module) => ({ default: module.GroupPage })));
 const LoginPage = lazy(() => import("./pages/LoginPage").then((module) => ({ default: module.LoginPage })));
 const ReliabilityLabPage = lazy(() =>
   import("./pages/ReliabilityLabPage").then((module) => ({ default: module.ReliabilityLabPage })),
-);
-const SequencePage = lazy(() =>
-  import("./pages/SequencePage").then((module) => ({ default: module.SequencePage })),
 );
 
 function Protected() {
@@ -47,6 +47,14 @@ export function App() {
           path="/"
           element={
             <Page>
+              <ConversationHomePage />
+            </Page>
+          }
+        />
+        <Route
+          path="/overview"
+          element={
+            <Page>
               <DashboardPage />
             </Page>
           }
@@ -67,14 +75,7 @@ export function App() {
             </Page>
           }
         />
-        <Route
-          path="/sequences"
-          element={
-            <Page>
-              <SequencePage />
-            </Page>
-          }
-        />
+        <Route path="/sequences" element={<Navigate to="/" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
