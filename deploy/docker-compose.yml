@@ -1,21 +1,21 @@
 # Build images first: set -a && source deploy/.env && set +a && ./deploy/build-images.sh
 services:
   gateway:
-    image: group-message-manager-node:${GMM_IMAGE_TAG:-latest}
+    image: group-message-manager-node:${GMM_IMAGE_TAG}
     command: ["node", "apps/mock-gateway/dist/main.js"]
     environment:
       PORT: "4001"
     env_file:
-      - ${GMM_ENV_FILE:-.env}
+      - ${GMM_ENV_FILE}
     networks:
       - gmm
     restart: unless-stopped
 
   agent:
-    image: group-message-manager-node:${GMM_IMAGE_TAG:-latest}
+    image: group-message-manager-node:${GMM_IMAGE_TAG}
     command: ["node", "apps/mock-agent/dist/main.js"]
     env_file:
-      - ${GMM_ENV_FILE:-.env}
+      - ${GMM_ENV_FILE}
     environment:
       PORT: "4002"
     networks:
@@ -23,10 +23,10 @@ services:
     restart: unless-stopped
 
   api:
-    image: group-message-manager-node:${GMM_IMAGE_TAG:-latest}
+    image: group-message-manager-node:${GMM_IMAGE_TAG}
     command: ["sh", "-c", "node apps/api/dist/db/migrate.js && node apps/api/dist/main.js"]
     env_file:
-      - ${GMM_ENV_FILE:-.env}
+      - ${GMM_ENV_FILE}
     environment:
       PORT: "3000"
       GATEWAY_URL: http://gateway:4001
@@ -41,7 +41,7 @@ services:
     restart: unless-stopped
 
   web:
-    image: group-message-manager-web:${GMM_IMAGE_TAG:-latest}
+    image: group-message-manager-web:${GMM_IMAGE_TAG}
     ports:
       - "15173:80"
     depends_on:
