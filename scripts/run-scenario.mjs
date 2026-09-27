@@ -25,18 +25,31 @@ async function prepare() {
   for (const id of ["account-1", "account-2"]) {
     const accounts = await call("/api/accounts");
     const account = accounts.find((item) => item.id === id);
+    if (!account) throw new Error(`Required scenario account is missing: ${id}`);
     if (["idle", "disconnected"].includes(account.status))
       await call(`/api/accounts/${id}/connect`, { method: "POST" });
   }
   const existing = await call("/api/groups");
-  if (existing[0]) return existing[0];
+  const reusable = existing.find(
+    (item) =>
+      item.status === "active" &&
+      item.gatewayGroupId &&
+      item.members.some((member) => member.accountId === "account-1"),
+  );
+  if (reusable) return reusable;
+
+  const existingIds = new Set(existing.map((item) => item.id));
   const job = await call("/api/groups", {
     method: "POST",
     body: JSON.stringify({ creatorAccountId: "account-1", memberAccountIds: ["account-2"] }),
   });
   for (let attempt = 0; attempt < 60; attempt++) {
     const status = await call(`/api/jobs/${job.jobId}`);
-    if (status.status === "finished") return (await call("/api/groups"))[0];
+    if (status.status === "finished") {
+      const created = (await call("/api/groups")).find((item) => !existingIds.has(item.id));
+      if (!created) throw new Error("Group job finished without creating a visible group");
+      return created;
+    }
     if (status.status === "failed") throw new Error(`Group job failed: ${JSON.stringify(status)}`);
     await wait(200);
   }

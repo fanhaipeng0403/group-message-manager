@@ -41,7 +41,7 @@ make up
 - **Agent 运行时**：读取上下文、发消息、移除成员、审计、幂等、运行预算和故障恢复。
 - **自动任务**：定时序列、公共变量与逐步骤覆盖、预检、单群互斥和进度展示。
 - **实时与会话**：WebSocket 断线补发、Refresh Token 轮换、重放失效与退出登录。
-- **工程化**：Zod 共享契约、Swagger、Migration 版本保护、Git hooks 和自动化验收脚本。
+- **工程化**：Zod 共享契约、Swagger、Migration 版本保护、Git hooks、CI 和自动化验收脚本。
 
 ## 系统架构图
 
@@ -199,11 +199,12 @@ pnpm lab:verify                  # 控制台可靠性实验
 ```bash
 pnpm build       # 生产构建
 pnpm lint        # ESLint + TypeScript + Prettier
-pnpm test        # 单元与契约测试
+pnpm test        # 单元、契约与数据库集成测试
 pnpm format      # 格式化
 pnpm db:migrate  # 执行迁移
 ```
 
 - `pre-commit`：对暂存文件执行 ESLint fix 与 Prettier。
 - `pre-push`：执行 `pnpm lint && pnpm test`。
+- GitHub Actions：使用 PostgreSQL 16 执行检查、构建、数据库迁移测试与全栈 Smoke 场景。
 - 其他配置见 `.env.example`；非演示环境应设置 `DEMO_MODE=false`。

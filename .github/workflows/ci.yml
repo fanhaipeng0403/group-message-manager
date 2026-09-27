@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: messaging_platform_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d messaging_platform_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:55432/messaging_platform_test
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:55432/messaging_platform_test
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+
+      - name: Run full-stack smoke scenario
+        shell: bash
+        run: |
+          pnpm dev > /tmp/group-message-manager.log 2>&1 &
+          dev_process_id=$!
+          trap 'kill "$dev_process_id" 2>/dev/null || true' EXIT
+
+          for attempt_number in {1..30}; do
+            if curl --fail --silent http://localhost:3000/api/health >/dev/null \
+              && curl --fail --silent http://localhost:5173 >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          if ! curl --fail --silent http://localhost:3000/api/health >/dev/null \
+            || ! curl --fail --silent http://localhost:5173 >/dev/null; then
+            cat /tmp/group-message-manager.log
+            exit 1
+          fi
+
+          pnpm scenario smoke
