@@ -11,7 +11,8 @@ COPY apps/mock-gateway/package.json apps/mock-gateway/
 COPY apps/mock-agent/package.json apps/mock-agent/
 COPY apps/web/package.json apps/web/
 
-RUN pnpm install --frozen-lockfile
+ARG NPM_REGISTRY=https://registry.npmjs.org
+RUN pnpm config set registry "${NPM_REGISTRY}" && pnpm install --frozen-lockfile
 
 COPY packages/contracts packages/contracts
 COPY apps/api apps/api
