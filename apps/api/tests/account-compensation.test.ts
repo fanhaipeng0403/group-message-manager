@@ -87,4 +87,17 @@ describe("account terminal-state compensation", () => {
     expect(events.publish).not.toHaveBeenCalled();
     expect(client.release).toHaveBeenCalledOnce();
   });
+
+  it("reconciles stale online state when the gateway reports the account offline", async () => {
+    const { service, client, events, event } = harness(1, "online");
+
+    await expect(service.reconcileGatewayOffline("account-1")).resolves.toBe(true);
+
+    expect(events.store).toHaveBeenCalledWith(
+      "account_status_changed",
+      { accountId: "account-1", from: "online", to: "disconnected" },
+      client,
+    );
+    expect(events.publish).toHaveBeenCalledWith(event);
+  });
 });

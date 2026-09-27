@@ -102,6 +102,13 @@ export class OutboxWorker {
         if (status && status !== "suspended" && status !== "session_expired") {
           await this.accounts.transition(row.account_id, status, compensation.status);
         }
+      } else if (compensation.kind === "account_offline") {
+        await this.accounts.reconcileGatewayOffline(row.account_id);
+        await this.pool.query(
+          `UPDATE messages SET dispatch_state = 'pending', claimed_at = NULL,
+             next_attempt_at = NULL, updated_at = now() WHERE id = $1`,
+          [row.id],
+        );
       } else if (compensation.kind === "mark_group_unreachable") {
         await this.pool.query("UPDATE groups SET status = 'unreachable', updated_at = now() WHERE id = $1", [
           row.group_id,

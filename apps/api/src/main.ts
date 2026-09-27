@@ -15,7 +15,7 @@ try {
   const schemaVersion = await assertSchemaCurrent(pool);
   const { app, eventHub, gateway, agent, accounts } = await buildApp(env, pool, schemaVersion);
   const gatewayEvents = new GatewayEventWorker(pool, gateway, eventHub, accounts, app.log);
-  const groupJobs = new GroupJobWorker(pool, gateway, app.log);
+  const groupJobs = new GroupJobWorker(pool, gateway, accounts, app.log);
   const outbox = new OutboxWorker(pool, gateway, accounts, eventHub, app.log);
   const agentRuns = new AgentRunWorker(pool, agent, gateway, eventHub, app.log);
   const sequences = new SequenceWorker(pool, eventHub, app.log);

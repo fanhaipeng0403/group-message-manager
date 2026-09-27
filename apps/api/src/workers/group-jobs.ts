@@ -1,6 +1,7 @@
 import type { DbPool } from "../db/pool.js";
 import { GatewayClient, GatewayError } from "../integrations/gateway/client.js";
 import { sleep } from "../common/sleep.js";
+import { AccountService } from "../modules/accounts/service.js";
 
 interface CreateGroupPayload {
   creatorAccountId: string;
@@ -28,6 +29,7 @@ export class GroupJobWorker {
   constructor(
     private readonly pool: DbPool,
     private readonly gateway: GatewayClient,
+    private readonly accounts: AccountService,
     private readonly log: Logger,
   ) {}
 
@@ -162,6 +164,10 @@ export class GroupJobWorker {
         [id],
       );
     } catch (error) {
+      if (error instanceof GatewayError && error.code === "ACCOUNT_OFFLINE") {
+        const accountId = step.startsWith("join:") ? step.slice("join:".length) : payload.creatorAccountId;
+        await this.accounts.reconcileGatewayOffline(accountId).catch(() => undefined);
+      }
       const code =
         error instanceof GatewayError
           ? error.code

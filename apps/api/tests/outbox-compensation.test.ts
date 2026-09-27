@@ -40,6 +40,12 @@ describe("outbox compensation matrix", () => {
     });
   });
 
+  it("reconciles an account that the gateway reports as offline", () => {
+    expect(classifySendFailure(new GatewayError(409, "ACCOUNT_OFFLINE", "offline"))).toEqual({
+      kind: "account_offline",
+    });
+  });
+
   it("retries an absent ambiguous message exactly once, then fails deterministically", () => {
     const absent = new GatewayError(404, "MESSAGE_NOT_FOUND", "missing");
     expect(classifyUnknownReconciliation(absent, 0)).toBe("retry_once");

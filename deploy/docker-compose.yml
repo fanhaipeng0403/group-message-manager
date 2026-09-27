@@ -5,6 +5,8 @@ services:
     command: ["node", "apps/mock-gateway/dist/main.js"]
     environment:
       PORT: "4001"
+    env_file:
+      - ${GMM_ENV_FILE:-.env}
     networks:
       - gmm
     restart: unless-stopped
@@ -29,7 +31,8 @@ services:
       PORT: "3000"
       GATEWAY_URL: http://gateway:4001
       AGENT_URL: http://agent:4002
-      DEMO_MODE: "false"
+      # This stack is the public interview demo and intentionally exposes fault-injection routes.
+      DEMO_MODE: "true"
     depends_on:
       - gateway
       - agent

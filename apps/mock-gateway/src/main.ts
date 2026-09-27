@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import { z } from "zod";
 import type { ServerResponse } from "node:http";
+import { GatewayStateStore } from "./state-store.js";
 
 type Account = {
   platformUserId: string;
@@ -66,15 +67,52 @@ const defaults: Control = {
 };
 
 const app = Fastify({ logger: true });
-const accounts = new Map<string, Account>();
-const groups = new Map<string, Group>();
-const messages = new Map<string, StoredMessage[]>();
-const history: Array<Record<string, unknown> & { eventId: number; type: string }> = [];
+const stateStore = new GatewayStateStore(process.env.DATABASE_URL);
+const restored = await stateStore.load();
+const accounts = new Map<string, Account>(
+  restored?.accounts.map(([id, account]) => [
+    id,
+    {
+      platformUserId: account.platformUserId,
+      online: account.online,
+      ...(account.terminal ? { terminal: account.terminal } : {}),
+      ...(account.limitedUntil !== undefined ? { limitedUntil: account.limitedUntil } : {}),
+    },
+  ]) ?? [],
+);
+const groups = new Map<string, Group>(
+  restored?.groups.map(([id, group]) => [
+    id,
+    {
+      id: group.id,
+      creatorAccountId: group.creatorAccountId,
+      members: new Set(group.members),
+      admins: new Set(group.admins),
+      ...(group.invite ? { invite: group.invite } : {}),
+    },
+  ]) ?? [],
+);
+const messages = new Map<string, StoredMessage[]>(restored?.messages ?? []);
+const history: Array<Record<string, unknown> & { eventId: number; type: string }> = restored?.history ?? [];
 const clients = new Set<ServerResponse>();
 const rateLimitTriggered = new Set<string>();
 const expiredInviteTriggered = new Set<string>();
 let control: Control = { ...defaults };
-let nextEventId = 1;
+let nextEventId = restored?.nextEventId ?? 1;
+
+function persistState(): Promise<void> {
+  return stateStore.save({
+    version: 1,
+    accounts: [...accounts.entries()],
+    groups: [...groups.entries()].map(([id, group]) => [
+      id,
+      { ...group, members: [...group.members], admins: [...group.admins] },
+    ]),
+    messages: [...messages.entries()],
+    history,
+    nextEventId,
+  });
+}
 
 function error(code: string, message = code, extra: Record<string, unknown> = {}) {
   return { error: { code, message, ...extra } };
@@ -87,6 +125,7 @@ function sseFrame(event: Record<string, unknown> & { eventId: number; type: stri
 function emit(type: string, payload: Record<string, unknown>, delayMs = control.eventDelayMs): void {
   const event = { eventId: nextEventId++, type, ...payload };
   history.push(event);
+  void persistState().catch((error) => app.log.error({ err: error }, "failed to persist gateway state"));
   setTimeout(() => {
     for (const client of clients) {
       client.write(sseFrame(event));
@@ -100,6 +139,7 @@ function accountFor(id: string): Account {
   if (!account) {
     account = { platformUserId: `platform-${id}`, online: false };
     accounts.set(id, account);
+    void persistState().catch((error) => app.log.error({ err: error }, "failed to persist gateway state"));
   }
   return account;
 }
@@ -121,6 +161,7 @@ app.post("/__control/reset", async () => {
   rateLimitTriggered.clear();
   expiredInviteTriggered.clear();
   nextEventId = 1;
+  await persistState();
   return { ok: true, control };
 });
 
@@ -178,6 +219,7 @@ app.post<{ Params: { groupId: string } }>("/__control/groups/:groupId/restore", 
     members: new Set(memberIds),
     admins: new Set(memberIds),
   });
+  await persistState();
   return { ok: true, restoredMembers: memberIds.length, nextEventId };
 });
 
@@ -190,6 +232,7 @@ app.post<{ Params: { groupId: string } }>("/__control/groups/:groupId/inbound", 
   group.members.add(senderPlatformUserId);
   const msgId = `msg-${crypto.randomUUID()}`;
   emit("message", { groupId: group.id, msgId, senderPlatformUserId, text, sentAt: Date.now() }, 0);
+  await persistState();
   return reply.status(202).send({ msgId });
 });
 
@@ -210,11 +253,13 @@ app.post<{ Params: { accountId: string } }>("/accounts/:accountId/connect", asyn
       .status(account.terminal === "suspended" ? 403 : 401)
       .send(error(account.terminal === "suspended" ? "ACCOUNT_SUSPENDED" : "SESSION_EXPIRED"));
   account.online = true;
+  await persistState();
   return { platformUserId: account.platformUserId };
 });
 
 app.post<{ Params: { accountId: string } }>("/accounts/:accountId/disconnect", async (request) => {
   accountFor(request.params.accountId).online = false;
+  await persistState();
   return {};
 });
 
@@ -230,6 +275,7 @@ app.post("/groups", async (request, reply) => {
     members: new Set([account.platformUserId]),
     admins: new Set([account.platformUserId]),
   });
+  await persistState();
   return { groupId: id };
 });
 
@@ -242,6 +288,7 @@ app.post<{ Params: { groupId: string } }>("/groups/:groupId/invite", async (requ
     expired: false,
   };
   group.invite = invite;
+  await persistState();
   return { inviteLink: invite.link, readyAfterMs: control.inviteReadyAfterMs };
 });
 
@@ -258,6 +305,7 @@ app.post<{ Params: { groupId: string } }>("/groups/:groupId/join", async (reques
   if (control.expireInviteOnce && !expiredInviteTriggered.has(group.id)) {
     expiredInviteTriggered.add(group.id);
     group.invite.expired = true;
+    await persistState();
     return reply.status(410).send(error("INVITE_EXPIRED"));
   }
   if (group.invite.expired) return reply.status(410).send(error("INVITE_EXPIRED"));
@@ -266,8 +314,12 @@ app.post<{ Params: { groupId: string } }>("/groups/:groupId/join", async (reques
   if (group.members.has(account.platformUserId)) return reply.status(409).send(error("ALREADY_MEMBER"));
   setTimeout(() => {
     group.members.add(account.platformUserId);
-    if (!control.dropJoinEvent)
-      emit("member_joined", { groupId: group.id, platformUserId: account.platformUserId }, 0);
+    void persistState()
+      .then(() => {
+        if (!control.dropJoinEvent)
+          emit("member_joined", { groupId: group.id, platformUserId: account.platformUserId }, 0);
+      })
+      .catch((error) => app.log.error({ err: error }, "failed to persist joined member"));
   }, control.joinDelayMs);
   return reply.status(202).send({ accepted: true });
 });
@@ -283,6 +335,7 @@ app.post<{ Params: { groupId: string } }>("/groups/:groupId/promote", async (req
   if (group.creatorAccountId !== byAccountId) return reply.status(403).send(error("NO_PERMISSION"));
   if (!group.members.has(target.platformUserId)) return reply.status(409).send(error("NOT_MEMBER_YET"));
   group.admins.add(target.platformUserId);
+  await persistState();
   return {};
 });
 
@@ -333,6 +386,7 @@ app.post<{ Params: { groupId: string } }>("/groups/:groupId/send", async (reques
     if (!rateLimitTriggered.has(accountId) || (account.limitedUntil && account.limitedUntil > Date.now())) {
       rateLimitTriggered.add(accountId);
       account.limitedUntil = Date.now() + control.rateLimitSeconds * 1000;
+      await persistState();
       return reply
         .status(429)
         .send(
@@ -340,9 +394,10 @@ app.post<{ Params: { groupId: string } }>("/groups/:groupId/send", async (reques
         );
     }
     delete account.limitedUntil;
+    await persistState();
   }
   if (control.sendMode === "write_forbidden") return reply.status(403).send(error("GROUP_WRITE_FORBIDDEN"));
-  const persist = () => {
+  const persist = async () => {
     const stored: StoredMessage = {
       groupId: group.id,
       clientMsgId,
@@ -354,6 +409,7 @@ app.post<{ Params: { groupId: string } }>("/groups/:groupId/send", async (reques
     const list = messages.get(clientMsgId) ?? [];
     list.push(stored);
     messages.set(clientMsgId, list);
+    await persistState();
     if (control.messageBeforeSent) {
       emit(
         "message",
@@ -421,3 +477,10 @@ app.get<{ Querystring: { since?: string } }>("/events", async (request, reply) =
 });
 
 await app.listen({ port: Number(process.env.PORT ?? 4001), host: "0.0.0.0" });
+
+const shutdown = async () => {
+  await app.close();
+  await stateStore.close();
+};
+process.once("SIGINT", () => void shutdown());
+process.once("SIGTERM", () => void shutdown());

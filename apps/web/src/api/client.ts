@@ -7,6 +7,12 @@ export interface ApiErrorBody {
   error: { code: string; message: string; requestId: string; [key: string]: unknown };
 }
 
+interface FastifyErrorBody {
+  error?: string;
+  message?: string;
+  statusCode?: number;
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -82,9 +88,22 @@ export async function api<T>(path: string, init: RequestInit = {}, allowRefresh 
     }
   }
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({
+    const raw = (await response.json().catch(() => ({
       error: { code: `HTTP_${response.status}`, message: response.statusText, requestId: "unknown" },
-    }))) as ApiErrorBody;
+    }))) as ApiErrorBody | FastifyErrorBody;
+    const body: ApiErrorBody =
+      typeof raw.error === "object" && raw.error !== null
+        ? (raw as ApiErrorBody)
+        : (() => {
+            const fastifyError = raw as FastifyErrorBody;
+            return {
+              error: {
+                code: fastifyError.error ?? `HTTP_${response.status}`,
+                message: fastifyError.message ?? response.statusText ?? `请求失败（${response.status}）`,
+                requestId: "unknown",
+              },
+            };
+          })();
     if (response.status === 401) {
       expireSession();
     }

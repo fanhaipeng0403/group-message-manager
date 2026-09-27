@@ -135,7 +135,18 @@ export function ReliabilityLabPage() {
       </header>
 
       {!activeGroups.length && (
-        <Alert type="warning" showIcon message="请先在运行总览连接账号并创建一个群聊。" />
+        <Alert
+          type="warning"
+          showIcon
+          message={
+            groups.data?.length
+              ? "已有群聊当前不可达或已退出，不能执行验证；请在消息工作台重新创建可用群聊。"
+              : "请先在运行总览连接账号并创建一个群聊。"
+          }
+        />
+      )}
+      {scenarios.isError && (
+        <Alert type="error" showIcon message="系统验证接口不可用，请检查服务器是否启用了演示模式。" />
       )}
 
       <div className="validation-layout">

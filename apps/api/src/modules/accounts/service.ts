@@ -118,6 +118,29 @@ export class AccountService {
     if (event) this.events.publish(event);
   }
 
+  async reconcileGatewayOffline(accountId: string): Promise<boolean> {
+    const client = await this.pool.connect();
+    let event: StoredEvent | undefined;
+    try {
+      await client.query("BEGIN");
+      await this.lock(client, accountId);
+      const current = await this.currentStatus(client, accountId);
+      if (current !== "online") {
+        await client.query("COMMIT");
+        return false;
+      }
+      event = await this.transitionInTransaction(client, accountId, "online", "disconnected");
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+    if (event) this.events.publish(event);
+    return true;
+  }
+
   private async transitionInTransaction(
     client: DbClient,
     accountId: string,
