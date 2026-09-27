@@ -4,7 +4,7 @@ import { App } from "antd";
 import { expireSession, getToken, refreshAccessToken } from "../api/client";
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? "ws://localhost:3000/ws";
-const WS_SEQ_KEY = "relayops_ws_last_seq";
+const WS_SEQ_KEY = "group_message_manager_ws_last_seq";
 
 export function LiveUpdates() {
   const queryClient = useQueryClient();

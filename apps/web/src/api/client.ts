@@ -1,7 +1,7 @@
 import type { Account, Group, Message } from "@platform/contracts";
 
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
-const TOKEN_KEY = "relayops_access_token";
+const TOKEN_KEY = "group_message_manager_access_token";
 
 export interface ApiErrorBody {
   error: { code: string; message: string; requestId: string; [key: string]: unknown };

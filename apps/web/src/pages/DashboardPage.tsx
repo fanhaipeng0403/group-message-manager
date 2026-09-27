@@ -80,7 +80,7 @@ export function DashboardPage() {
             <em>变成确定性的业务能力。</em>
           </Typography.Title>
           <Typography.Paragraph>
-            RelayOps 为多账号群消息提供持久化编排层。即使网关重复、超时、限流，Agent
+            群消息管理平台为多账号群消息提供持久化编排层。即使网关重复、超时、限流，Agent
             返回异常，业务仍然可恢复、可审计、可解释。
           </Typography.Paragraph>
           <Space size={12} wrap>

@@ -22,9 +22,9 @@ This is stronger than an in-memory `Set`: a restart or a second API instance doe
 
 ### 2. S5: timeout does not mean failure
 
-A gateway `504` creates an ambiguous result: resending immediately may duplicate a message that actually landed. RelayOps keeps its own message identity first, queries the gateway by `clientMsgId`, and retries only after reconciliation says the message is absent.
+A gateway `504` creates an ambiguous result: resending immediately may duplicate a message that actually landed. Group Message Manager keeps its own message identity first, queries the gateway by `clientMsgId`, and retries only after reconciliation says the message is absent.
 
-At the Agent boundary, `(run_id, idempotency_key)` maps to one local message. If the Agent calls `send_message` again with the same key, RelayOps returns the existing delivery result. It does not create a second message and does not repeat the audit. The experiment proves four independent facts: two tool calls, one audit, one idempotency mapping and one gateway message.
+At the Agent boundary, `(run_id, idempotency_key)` maps to one local message. If the Agent calls `send_message` again with the same key, Group Message Manager returns the existing delivery result. It does not create a second message and does not repeat the audit. The experiment proves four independent facts: two tool calls, one audit, one idempotency mapping and one gateway message.
 
 ### 3. S6: treat model output as hostile input
 

@@ -13,7 +13,7 @@ const LoginSchema = z.object({
   password: z.string().min(1).describe("操作员密码"),
 });
 const LoginResponseSchema = z.object({ accessToken: z.string().describe("15 分钟有效的 JWT access token") });
-const REFRESH_COOKIE = "relayops_refresh_token";
+const REFRESH_COOKIE = "group_message_manager_refresh_token";
 const REFRESH_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
 function hashToken(token: string): string {

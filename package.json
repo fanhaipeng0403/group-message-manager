@@ -1,5 +1,5 @@
 {
-  "name": "multi-account-messaging-platform",
+  "name": "group-message-manager",
   "private": true,
   "packageManager": "pnpm@10.25.0",
   "scripts": {

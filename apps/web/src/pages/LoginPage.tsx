@@ -25,7 +25,7 @@ export function LoginPage() {
       <section className="login-story">
         <div className="brand inverse">
           <span className="brand-mark">R</span>
-          <span>RelayOps</span>
+          <span>群消息管理平台</span>
         </div>
         <Typography.Title>
           让不可靠的外部世界，
@@ -76,7 +76,7 @@ export function LoginPage() {
               <Input.Password size="large" />
             </Form.Item>
             <Button type="primary" htmlType="submit" size="large" loading={loading} block>
-              进入 RelayOps
+              进入管理平台
             </Button>
           </Form>
         </div>

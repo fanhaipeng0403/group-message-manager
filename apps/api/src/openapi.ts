@@ -11,7 +11,7 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
     openapi: {
       openapi: "3.0.3",
       info: {
-        title: "RelayOps API",
+        title: "Group Message Manager API",
         version: "1.0.0",
         description:
           "多账号群组消息平台。重点展示持久化 Inbox/Outbox、状态机、异步任务和可审计 Agent 工具循环。",

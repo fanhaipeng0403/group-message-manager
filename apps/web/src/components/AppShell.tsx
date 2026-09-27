@@ -27,7 +27,7 @@ export function AppShell() {
               <i />
             </span>
             <span>
-              <b>RelayOps</b>
+              <b>群消息管理</b>
               <small>CONTROL PLANE</small>
             </span>
           </Link>

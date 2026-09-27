@@ -1,6 +1,6 @@
 # Architecture
 
-RelayOps is a lightweight pnpm monorepo containing four independently runnable applications and one contract package.
+Group Message Manager is a lightweight pnpm monorepo containing four independently runnable applications and one contract package.
 
 ```text
 React console ── REST / WebSocket ── API ── HTTP / SSE ── mock gateway
