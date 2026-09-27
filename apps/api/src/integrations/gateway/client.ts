@@ -86,16 +86,18 @@ export class GatewayClient {
     });
   }
 
-  kick(groupId: string, byAccountId: string, targetPlatformUserId: string) {
+  kick(groupId: string, byAccountId: string, targetPlatformUserId: string, timeoutMs = 8_000) {
     return this.request<{ kicked: true }>(`/groups/${groupId}/kick`, {
       method: "POST",
       body: JSON.stringify({ byAccountId, targetPlatformUserId }),
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(Math.max(1, Math.min(8_000, timeoutMs))),
     });
   }
 
-  members(groupId: string) {
-    return this.request<Array<{ platformUserId: string }>>(`/groups/${groupId}/members`);
+  members(groupId: string, timeoutMs = 8_000) {
+    return this.request<Array<{ platformUserId: string }>>(`/groups/${groupId}/members`, {
+      signal: AbortSignal.timeout(Math.max(1, Math.min(8_000, timeoutMs))),
+    });
   }
 
   leave(groupId: string, accountId: string) {

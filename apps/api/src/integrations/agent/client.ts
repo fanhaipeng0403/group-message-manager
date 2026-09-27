@@ -10,22 +10,25 @@ export class AgentClient {
     private readonly turnTimeoutMs: number,
   ) {}
 
-  async turn(body: AgentTurnRequest): Promise<{ status: number; raw: string }> {
+  async turn(
+    body: AgentTurnRequest,
+    timeoutMs = this.turnTimeoutMs,
+  ): Promise<{ status: number; raw: string }> {
     const response = await fetch(`${this.baseUrl}/agent/turn`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.turnTimeoutMs),
+      signal: AbortSignal.timeout(Math.max(1, Math.min(this.turnTimeoutMs, timeoutMs))),
     });
     return { status: response.status, raw: await response.text() };
   }
 
-  async audit(text: string, groupId: string): Promise<"pass" | "fail"> {
+  async audit(text: string, groupId: string, timeoutMs = 5_000): Promise<"pass" | "fail"> {
     const response = await fetch(`${this.baseUrl}/agent/audit`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ text, groupId }),
-      signal: AbortSignal.timeout(5_000),
+      signal: AbortSignal.timeout(Math.max(1, Math.min(5_000, timeoutMs))),
     });
     if (!response.ok) throw new Error(`Audit HTTP ${response.status}`);
     const body = (await response.json()) as { verdict?: unknown };

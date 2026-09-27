@@ -74,6 +74,8 @@ interface ToolExecutionResult {
   finish?: string;
 }
 
+class WallClockExceeded extends Error {}
+
 export function serializeToolResult(body: Record<string, unknown>, maxBytes = 8 * 1024): string {
   const serialized = JSON.stringify(body);
   if (Buffer.byteLength(serialized, "utf8") <= maxBytes) return serialized;
@@ -128,7 +130,7 @@ export class AgentRunWorker {
     try {
       await this.createPendingRun();
       const run = await this.claimRun();
-      if (run) await this.step(run);
+      if (run) await this.withLeaseHeartbeat(run);
     } catch (error) {
       this.log.error({ err: error }, "agent worker iteration failed");
     } finally {
@@ -227,6 +229,24 @@ export class AgentRunWorker {
     return result.rows[0];
   }
 
+  private async withLeaseHeartbeat(run: RunRow): Promise<void> {
+    const heartbeat = setInterval(
+      () =>
+        void this.pool
+          .query(
+            "UPDATE agent_runs SET lease_until = now() + interval '20 seconds' WHERE id = $1 AND status = 'running'",
+            [run.id],
+          )
+          .catch((error) => this.log.error({ err: error }, "agent lease heartbeat failed")),
+      5_000,
+    );
+    try {
+      await this.step(run);
+    } finally {
+      clearInterval(heartbeat);
+    }
+  }
+
   private async step(run: RunRow): Promise<void> {
     if (run.step_count >= 12) {
       await this.finish(run, "failed", "budget_exhausted");
@@ -236,6 +256,8 @@ export class AgentRunWorker {
       await this.finish(run, "failed", "wall_clock");
       return;
     }
+    const remainingBudget = 60_000 - Number(run.active_elapsed_ms);
+    const deadline = Date.now() + remainingBudget;
     const group = await this.pool.query<{ gateway_group_id: string; agent_enabled: boolean; status: string }>(
       "SELECT gateway_group_id, agent_enabled, status FROM groups WHERE id = $1",
       [run.group_id],
@@ -249,16 +271,28 @@ export class AgentRunWorker {
     let raw = "";
     let parsed: z.infer<typeof AgentTurnResponseSchema>;
     try {
-      const response = await this.agent.turn({ runId: run.id, tools, messages: run.conversation });
+      const response = await this.agent.turn(
+        { runId: run.id, tools, messages: run.conversation },
+        remainingBudget,
+      );
       raw = response.raw.slice(0, 2048);
       if (response.status < 200 || response.status >= 300) throw new Error("BAD_JSON");
       parsed = AgentTurnResponseSchema.parse(JSON.parse(response.raw));
     } catch (error) {
+      if (Date.now() >= deadline) {
+        await this.finish(run, "failed", "wall_clock", Date.now() - started);
+        return;
+      }
       const code =
         error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")
           ? "TURN_TIMEOUT"
           : "BAD_JSON";
       await this.protocolError(run, code, raw, Date.now() - started);
+      return;
+    }
+
+    if (Date.now() >= deadline) {
+      await this.finish(run, "failed", "wall_clock", Date.now() - started);
       return;
     }
 
@@ -278,8 +312,19 @@ export class AgentRunWorker {
 
     let result: ToolExecutionResult;
     try {
-      result = await this.executeTool(run, group.rows[0].gateway_group_id, call.id, call.name, call.input);
+      result = await this.executeTool(
+        run,
+        group.rows[0].gateway_group_id,
+        call.id,
+        call.name,
+        call.input,
+        deadline,
+      );
     } catch (error) {
+      if (error instanceof WallClockExceeded || Date.now() >= deadline) {
+        await this.finish(run, "failed", "wall_clock", Date.now() - started);
+        return;
+      }
       result = {
         body: { code: "INVALID_INPUT", message: error instanceof Error ? error.message : String(error) },
         isError: true,
@@ -295,7 +340,9 @@ export class AgentRunWorker {
     toolUseId: string,
     name: string,
     input: Record<string, unknown>,
+    deadline: number,
   ): Promise<ToolExecutionResult> {
+    this.assertWithinBudget(deadline);
     if (name === "get_recent_messages") {
       const value = RecentInput.parse(input);
       const limit = Math.min(Math.max(Math.floor(value.limit), 1), 50);
@@ -330,7 +377,7 @@ export class AgentRunWorker {
         [run.id, value.idempotency_key],
       );
       if (existing.rows[0]) return this.deliveryToolResult(existing.rows[0].message_id);
-      const audit = await this.audit(value.text, run.group_id);
+      const audit = await this.audit(value.text, run.group_id, deadline);
       if (audit !== "pass")
         return {
           body: {
@@ -384,14 +431,15 @@ export class AgentRunWorker {
       } finally {
         client.release();
       }
-      const deadline = Date.now() + 5_000;
-      while (Date.now() < deadline) {
+      const deliveryDeadline = Math.min(deadline, Date.now() + 5_000);
+      while (Date.now() < deliveryDeadline) {
         const delivery = await this.deliveryToolResult(messageId);
         if (delivery.body.deliveryStatus !== "queued" && delivery.body.deliveryStatus !== "unknown") {
           return { ...delivery, auditVerdict: audit };
         }
         await sleep(100);
       }
+      this.assertWithinBudget(deadline);
       return {
         body: { code: "SEND_TIMEOUT", message: "Delivery was not confirmed within 5 seconds" },
         isError: true,
@@ -411,7 +459,7 @@ export class AgentRunWorker {
         return { body: { code, message: code }, isError: true, errorCode: code };
       }
       if (existingEffect.rows[0]?.status === "pending") {
-        const members = await this.gateway.members(gatewayGroupId);
+        const members = await this.gateway.members(gatewayGroupId, this.remaining(deadline));
         if (!members.some((member) => member.platformUserId === value.platform_user_id)) {
           await this.markKickEffect(run.id, toolUseId, "succeeded");
           return { body: { kicked: true } };
@@ -432,7 +480,7 @@ export class AgentRunWorker {
         platform_user_id: value.platform_user_id,
         reason: value.reason,
       });
-      const audit = await this.audit(auditText, run.group_id);
+      const audit = await this.audit(auditText, run.group_id, deadline);
       if (audit !== "pass")
         return {
           body: {
@@ -463,26 +511,40 @@ export class AgentRunWorker {
         [run.id, toolUseId, run.group_id, value.platform_user_id],
       );
       try {
-        await this.gateway.kick(gatewayGroupId, actor.rows[0].account_id, value.platform_user_id);
+        await this.gateway.kick(
+          gatewayGroupId,
+          actor.rows[0].account_id,
+          value.platform_user_id,
+          this.remaining(deadline),
+        );
       } catch (error) {
+        this.assertWithinBudget(deadline);
         const code = error instanceof GatewayError ? error.code : "NO_PERMISSION";
         if (code === "NETWORK_TIMEOUT") {
-          await sleep(2_100);
-          const members = await this.gateway.members(gatewayGroupId);
+          await sleep(Math.min(2_100, this.remaining(deadline)));
+          this.assertWithinBudget(deadline);
+          const members = await this.gateway.members(gatewayGroupId, this.remaining(deadline));
           if (!members.some((member) => member.platformUserId === value.platform_user_id)) {
             await this.markKickEffect(run.id, toolUseId, "succeeded");
             return { body: { kicked: true }, auditVerdict: audit };
           }
           try {
-            await this.gateway.kick(gatewayGroupId, actor.rows[0].account_id, value.platform_user_id);
+            await this.gateway.kick(
+              gatewayGroupId,
+              actor.rows[0].account_id,
+              value.platform_user_id,
+              this.remaining(deadline),
+            );
             await this.markKickEffect(run.id, toolUseId, "succeeded");
             return { body: { kicked: true }, auditVerdict: audit };
-          } catch {
-            await this.markKickEffect(run.id, toolUseId, "failed", "GROUP_UNREACHABLE");
+          } catch (retryError) {
+            this.assertWithinBudget(deadline);
+            const retryCode = retryError instanceof GatewayError ? retryError.code : "GROUP_UNREACHABLE";
+            await this.markKickEffect(run.id, toolUseId, "failed", retryCode);
             return {
-              body: { code: "GROUP_UNREACHABLE", message: "Kick outcome could not be confirmed" },
+              body: { code: retryCode, message: "Kick outcome could not be confirmed" },
               isError: true,
-              errorCode: "GROUP_UNREACHABLE",
+              errorCode: retryCode,
               auditVerdict: audit,
             };
           }
@@ -504,12 +566,14 @@ export class AgentRunWorker {
     };
   }
 
-  private async audit(text: string, groupId: string): Promise<"pass" | "fail" | "blocked"> {
+  private async audit(text: string, groupId: string, deadline: number): Promise<"pass" | "fail" | "blocked"> {
     for (let attempt = 0; attempt < 3; attempt++) {
+      this.assertWithinBudget(deadline);
       try {
-        return await this.agent.audit(text, groupId);
+        return await this.agent.audit(text, groupId, this.remaining(deadline));
       } catch {
-        if (attempt < 2) await sleep(100);
+        this.assertWithinBudget(deadline);
+        if (attempt < 2) await sleep(Math.min(100, this.remaining(deadline)));
       }
     }
     return "blocked";
@@ -705,11 +769,21 @@ export class AgentRunWorker {
     run: RunRow,
     status: "failed" | "blocked" | "cancelled",
     reason: string,
+    elapsed = 0,
   ): Promise<void> {
     await this.pool.query(
-      "UPDATE agent_runs SET status = $2, end_reason = $3, lease_until = NULL, updated_at = now() WHERE id = $1",
-      [run.id, status, reason],
+      `UPDATE agent_runs SET status = $2, end_reason = $3, active_elapsed_ms = active_elapsed_ms + $4,
+       lease_until = NULL, updated_at = now() WHERE id = $1`,
+      [run.id, status, reason, elapsed],
     );
     await this.events.emit("agent_run", { runId: run.id, groupId: run.group_id, status, endReason: reason });
+  }
+
+  private remaining(deadline: number): number {
+    return Math.max(1, deadline - Date.now());
+  }
+
+  private assertWithinBudget(deadline: number): void {
+    if (Date.now() >= deadline) throw new WallClockExceeded("Agent run wall-clock budget exhausted");
   }
 }

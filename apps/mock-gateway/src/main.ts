@@ -150,6 +150,16 @@ app.get("/__control", async () => ({
   counts: { accounts: accounts.size, groups: groups.size, events: history.length },
 }));
 
+app.get<{ Params: { accountId: string } }>("/__control/accounts/:accountId", async (request) => {
+  const account = accountFor(request.params.accountId);
+  return {
+    accountId: request.params.accountId,
+    platformUserId: account.platformUserId,
+    online: account.online,
+    terminal: account.terminal ?? null,
+  };
+});
+
 app.post<{ Params: { groupId: string } }>("/__control/groups/:groupId/restore", async (request) => {
   const input = z
     .object({

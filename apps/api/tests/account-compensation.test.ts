@@ -3,6 +3,7 @@ import type { DbPool } from "../src/db/pool.js";
 import type { EventHub, StoredEvent } from "../src/common/event-hub.js";
 import { AppError } from "../src/common/errors.js";
 import { AccountService } from "../src/modules/accounts/service.js";
+import type { GatewayClient } from "../src/integrations/gateway/client.js";
 
 function harness(updateRowCount: number, currentStatus = "online") {
   const sql: string[] = [];
@@ -40,6 +41,12 @@ describe("account terminal-state compensation", () => {
           statement.includes("delivery_status = 'cancelled'") && statement.includes("ACCOUNT_TERMINAL"),
       ),
     ).toBe(true);
+    expect(
+      sql.some(
+        (statement) =>
+          statement.includes("UPDATE sequence_run_steps") && statement.includes("status = 'skipped'"),
+      ),
+    ).toBe(true);
     expect(sql.at(-1)).toBe("COMMIT");
     expect(events.store).toHaveBeenCalledWith(
       "account_terminal",
@@ -48,6 +55,22 @@ describe("account terminal-state compensation", () => {
     );
     expect(events.publish).toHaveBeenCalledWith(event);
     expect(client.release).toHaveBeenCalledOnce();
+  });
+
+  it("silently accepts an account already in the same terminal state", async () => {
+    const { service, client, events } = harness(1, "suspended");
+    const gateway = { connect: vi.fn(), disconnect: vi.fn() } as unknown as GatewayClient;
+
+    await expect(
+      service.operatorTransition("account-1", "suspended", "suspended", gateway),
+    ).resolves.toBeUndefined();
+
+    expect(client.query).toHaveBeenCalledWith("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+      "account-1",
+    ]);
+    expect(gateway.connect).not.toHaveBeenCalled();
+    expect(gateway.disconnect).not.toHaveBeenCalled();
+    expect(events.store).not.toHaveBeenCalled();
   });
 
   it("rolls back all cleanup work when compare-and-set detects a concurrent change", async () => {

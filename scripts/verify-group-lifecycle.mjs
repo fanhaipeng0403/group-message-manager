@@ -21,6 +21,13 @@ const call = (path, init = {}) =>
   json(`${API}${path}`, { ...init, headers: { ...headers, ...init.headers } });
 for (const id of ["account-1", "account-2"]) {
   const account = (await call("/api/accounts")).find((item) => item.id === id);
+  if (account.status === "online") {
+    await call(`/api/accounts/${id}/transition`, {
+      method: "POST",
+      body: JSON.stringify({ expectedFrom: "online", to: "disconnected" }),
+    });
+    account.status = "disconnected";
+  }
   if (["idle", "disconnected"].includes(account.status))
     await call(`/api/accounts/${id}/connect`, { method: "POST" });
 }

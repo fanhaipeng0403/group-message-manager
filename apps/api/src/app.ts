@@ -73,11 +73,20 @@ export async function buildApp(env: Env, pool: DbPool, schemaVersion: number) {
         if (!session.rowCount) throw new Error("Session revoked");
         authenticated = true;
         clearTimeout(timeout);
+        eventHub.addBuffered(socket as WebSocket);
         socket.send(JSON.stringify({ type: "auth", success: true }));
+        let replayedThrough = input.sinceSeq ?? 0;
         if (input.sinceSeq !== undefined) {
-          for (const event of await eventHub.since(input.sinceSeq)) socket.send(JSON.stringify(event));
+          while (true) {
+            const batch = await eventHub.since(replayedThrough);
+            for (const event of batch) {
+              socket.send(JSON.stringify(event));
+              replayedThrough = event.seq;
+            }
+            if (batch.length < 1_000) break;
+          }
         }
-        eventHub.add(socket as WebSocket);
+        eventHub.activate(socket as WebSocket, replayedThrough);
       } catch {
         socket.close(4401, "Unauthorized");
       }

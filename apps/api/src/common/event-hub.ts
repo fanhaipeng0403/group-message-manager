@@ -10,13 +10,22 @@ export interface StoredEvent {
 }
 
 export class EventHub {
-  private readonly sockets = new Set<WebSocket>();
+  private readonly sockets = new Map<WebSocket, StoredEvent[] | null>();
 
   constructor(private readonly pool: DbPool) {}
 
-  add(socket: WebSocket): void {
-    this.sockets.add(socket);
+  addBuffered(socket: WebSocket): void {
+    this.sockets.set(socket, []);
     socket.once("close", () => this.sockets.delete(socket));
+  }
+
+  activate(socket: WebSocket, replayedThrough: number): void {
+    const buffered = this.sockets.get(socket);
+    if (!buffered) return;
+    this.sockets.set(socket, null);
+    for (const event of buffered.filter((item) => item.seq > replayedThrough).sort((a, b) => a.seq - b.seq)) {
+      this.send(socket, JSON.stringify(event));
+    }
   }
 
   async store(
@@ -33,8 +42,9 @@ export class EventHub {
 
   publish(event: StoredEvent): void {
     const body = JSON.stringify(event);
-    for (const socket of this.sockets) {
-      if (socket.readyState === socket.OPEN) socket.send(body);
+    for (const [socket, buffer] of this.sockets) {
+      if (buffer) buffer.push(event);
+      else this.send(socket, body);
     }
   }
 
@@ -51,5 +61,14 @@ export class EventHub {
       payload: Record<string, unknown>;
     }>("SELECT seq, type, payload FROM ws_events WHERE seq > $1 ORDER BY seq ASC LIMIT 1000", [seq]);
     return result.rows.map((row) => ({ ...row, seq: Number(row.seq) }));
+  }
+
+  private send(socket: WebSocket, body: string): void {
+    if (socket.readyState !== socket.OPEN) return;
+    try {
+      socket.send(body);
+    } catch {
+      this.sockets.delete(socket);
+    }
   }
 }

@@ -18,7 +18,8 @@
     "lab:verify": "node scripts/run-reliability-lab.mjs",
     "auth:verify": "node scripts/verify-auth-session.mjs",
     "sequence:verify": "node scripts/verify-sequences.mjs",
-    "group-lifecycle:verify": "node scripts/verify-group-lifecycle.mjs"
+    "group-lifecycle:verify": "node scripts/verify-group-lifecycle.mjs",
+    "account-concurrency:verify": "node scripts/verify-account-concurrency.mjs"
   },
   "lint-staged": {
     "*.{ts,tsx,js,mjs}": [

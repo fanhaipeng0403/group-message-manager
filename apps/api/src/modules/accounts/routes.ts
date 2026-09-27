@@ -4,10 +4,8 @@ import { AccountSchema, AccountStatusSchema } from "@platform/contracts";
 import { z } from "zod";
 import type { DbPool } from "../../db/pool.js";
 import { requireAdmin, authenticate } from "../../common/auth.js";
-import { AppError } from "../../common/errors.js";
 import { GatewayClient } from "../../integrations/gateway/client.js";
 import { AccountService } from "./service.js";
-import { canTransition } from "./state-machine.js";
 import { AccountIdParamsSchema, BearerSecurity, ErrorResponses } from "../../common/http-schemas.js";
 
 const TransitionSchema = z.object({ to: AccountStatusSchema, expectedFrom: AccountStatusSchema });
@@ -63,21 +61,7 @@ export function registerAccountRoutes(
       },
     },
     async (request) => {
-      const current = await pool.query<{ status: string }>("SELECT status FROM accounts WHERE id = $1", [
-        request.params.id,
-      ]);
-      if (!current.rowCount) throw new AppError(404, "ACCOUNT_NOT_FOUND", "Account not found");
-      const from = AccountStatusSchema.parse(current.rows[0]!.status);
-      if (from !== "idle" && from !== "disconnected") {
-        throw new AppError(409, "ILLEGAL_TRANSITION", `Cannot connect account in ${from}`);
-      }
-      const connected = await gateway.connect(request.params.id);
-      try {
-        await accounts.connected(request.params.id, from, connected.platformUserId);
-      } catch (error) {
-        await gateway.disconnect(request.params.id).catch(() => undefined);
-        throw error;
-      }
+      const connected = await accounts.connectThroughGateway(request.params.id, gateway);
       return { status: "online" as const, platformUserId: connected.platformUserId };
     },
   );
@@ -99,31 +83,7 @@ export function registerAccountRoutes(
     },
     async (request) => {
       const input = request.body;
-      if (!canTransition(input.expectedFrom, input.to)) {
-        throw new AppError(
-          409,
-          "ILLEGAL_TRANSITION",
-          `Cannot transition account from ${input.expectedFrom} to ${input.to}`,
-        );
-      }
-      const current = await pool.query<{ status: string }>("SELECT status FROM accounts WHERE id = $1", [
-        request.params.id,
-      ]);
-      if (!current.rowCount) throw new AppError(404, "ACCOUNT_NOT_FOUND", "Account not found");
-      if (current.rows[0]!.status !== input.expectedFrom) {
-        throw new AppError(409, "CAS_CONFLICT", "Account status changed concurrently", {
-          expectedFrom: input.expectedFrom,
-          actual: current.rows[0]!.status,
-        });
-      }
-      const disconnecting = input.to === "idle" || input.to === "disconnected";
-      if (disconnecting) await gateway.disconnect(request.params.id);
-      try {
-        await accounts.transition(request.params.id, input.expectedFrom, input.to);
-      } catch (error) {
-        if (disconnecting) await gateway.connect(request.params.id).catch(() => undefined);
-        throw error;
-      }
+      await accounts.operatorTransition(request.params.id, input.expectedFrom, input.to, gateway);
       return { status: input.to };
     },
   );

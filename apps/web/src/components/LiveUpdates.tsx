@@ -37,6 +37,10 @@ export function LiveUpdates() {
           void queryClient.invalidateQueries({ queryKey: ["messages", event.payload?.groupId] });
           void queryClient.invalidateQueries({ queryKey: ["agent-runs", event.payload?.groupId] });
         }
+        if (event.type === "sequence_run") {
+          void queryClient.invalidateQueries({ queryKey: ["groups"] });
+          void queryClient.invalidateQueries({ queryKey: ["sequence-run", event.payload?.runId] });
+        }
       });
       socket.addEventListener("close", () => {
         if (!stopped) retry = window.setTimeout(connect, 1_000);
